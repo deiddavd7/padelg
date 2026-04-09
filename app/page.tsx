@@ -1,65 +1,125 @@
-import Image from "next/image";
+'use client'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 
 export default function Home() {
+  const [giocatori, setGiocatori] = useState<any[]>([])
+  const [nuovoNome, setNuovoNome] = useState('')
+  const [caricamento, setCaricamento] = useState(true)
+
+  const prendiGiocatori = async () => {
+    const { data, error } = await supabase
+      .from('giocatori')
+      .select('*')
+      .order('Punti', { ascending: false })
+
+    if (error) {
+      console.error("Errore lettura:", error.message)
+    } else {
+      setGiocatori(data || [])
+    }
+    setCaricamento(false)
+  }
+
+  useEffect(() => {
+    prendiGiocatori()
+  }, [])
+
+  const aggiungiGiocatore = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!nuovoNome.trim()) return
+
+    const { error } = await supabase
+      .from('giocatori')
+      .insert([{ Nome: nuovoNome, Punti: 1000 }])
+
+    if (error) {
+      alert("Errore inserimento: " + error.message)
+    } else {
+      setNuovoNome('')
+      prendiGiocatori()
+    }
+  }
+
+  const aggiornaPunti = async (id: any, puntiAttuali: number, variazione: number) => {
+    const { error } = await supabase
+      .from('giocatori')
+      .update({ Punti: puntiAttuali + variazione })
+      .eq('id', id)
+
+    if (error) {
+      alert("Errore aggiornamento: " + error.message)
+    } else {
+      prendiGiocatori()
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main className="flex min-h-screen flex-col items-center bg-green-600 text-white p-4 font-sans">
+      <h1 className="text-6xl font-black mb-2 italic tracking-tighter text-yellow-300">padelg</h1>
+      <p className="text-white mb-8 font-medium tracking-widest uppercase text-xs">Ranking Live</p>
+      
+      <form onSubmit={aggiungiGiocatore} className="w-full max-w-md mb-8 flex gap-2">
+        <input 
+          type="text" 
+          placeholder="Scrivi nome e cognome..." 
+          value={nuovoNome}
+          onChange={(e) => setNuovoNome(e.target.value)}
+          className="flex-1 p-4 rounded-2xl text-black font-bold outline-none shadow-lg"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+        <button type="submit" className="bg-yellow-300 text-green-800 font-black px-6 rounded-2xl shadow-lg hover:bg-white transition-all active:scale-95">
+          UNISCITI
+        </button>
+      </form>
+
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden text-black">
+        <div className="bg-gray-800 p-4 font-bold text-center text-white uppercase tracking-widest text-sm">
+          Classifica Campioni
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        
+        <div className="divide-y divide-gray-100">
+          {giocatori.length > 0 ? (
+            giocatori.map((g, index) => (
+              <div key={g.id || index} className="p-5 flex justify-between items-center hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-4 flex-1">
+                  <span className={`text-lg font-black w-8 ${index < 3 ? 'text-yellow-500' : 'text-gray-300'}`}>
+                    {index + 1}°
+                  </span>
+                  <span className="font-extrabold text-lg uppercase leading-tight">
+                    {g.Nome}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => aggiornaPunti(g.id, g.Punti, -10)}
+                      className="w-10 h-10 flex items-center justify-center bg-red-100 text-red-600 rounded-full font-black hover:bg-red-600 hover:text-white transition-all active:scale-90"
+                    >
+                      -
+                    </button>
+                    <button 
+                      onClick={() => aggiornaPunti(g.id, g.Punti, 10)}
+                      className="w-10 h-10 flex items-center justify-center bg-green-100 text-green-600 rounded-full font-black hover:bg-green-600 hover:text-white transition-all active:scale-90"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col items-end min-w-[60px]">
+                    <span className="text-2xl font-black text-green-600">{g.Punti}</span>
+                    <span className="text-[10px] text-gray-400 uppercase font-bold">punti</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-10 text-center text-gray-400 font-bold">
+              {caricamento ? "CARICAMENTO..." : "NESSUN GIOCATORE"}
+            </div>
+          )}
         </div>
-      </main>
-    </div>
-  );
+      </div>
+    </main>
+  )
 }

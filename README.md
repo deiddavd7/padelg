@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎾 PadelG - Ranking Live
 
-## Getting Started
+**PadelG** è un'applicazione web moderna progettata per gestire le classifiche dei giocatori di Padel in tempo reale. Creata per rendere competitive e divertenti le sfide tra amici, l'app permette di visualizzare il ranking, aggiungere nuovi giocatori e aggiornare i punteggi istantaneamente.
 
-First, run the development server:
+## 🚀 Funzionalità
+* **Ranking dinamico:** Classifica aggiornata automaticamente in base ai punti.
+* **Inserimento Giocatori:** Modulo rapido per aggiungere nuovi sfidanti con un punteggio base.
+* **Aggiornamento Live:** Tasti "+" e "-" per modificare i punti dei singoli giocatori direttamente dal campo.
+* **Avatar Personalizzati:** Supporto per le foto dei giocatori (in fase di implementazione).
+* **Design Responsive:** Ottimizzata per l'uso da smartphone.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🛠️ Tecnologie Utilizzate
+* **Framework:** [Next.js 14](https://nextjs.org/) (App Router)
+* **Linguaggio:** TypeScript
+* **Database & Auth:** [Supabase](https://supabase.com/) (PostgreSQL + Realtime)
+* **Styling:** Tailwind CSS
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+# 🎾 PadelG - Live Ranking (English)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**PadelG** is a modern web application designed to manage Padel player rankings in real-time. Built to make matches between friends more competitive and fun, the app allows you to view the ranking, add new players, and update scores instantly.
 
-## Learn More
+## 🚀 Features
+* **Dynamic Ranking:** Leaderboard automatically sorted by points.
+* **Player Onboarding:** Quick form to add new challengers with a base score.
+* **Live Updates:** "+" and "-" buttons to modify player points directly from the court.
+* **Custom Avatars:** Support for player photos.
+* **Responsive Design:** Optimized for mobile use.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🛠️ Tech Stack
+* **Framework:** Next.js 14
+* **Database:** Supabase (PostgreSQL)
+* **Styling:** Tailwind CSS 
