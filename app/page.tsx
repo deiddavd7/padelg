@@ -71,7 +71,8 @@ export default function Home() {
       const url = await uploadFotoHelper(fileFoto)
       if (url) urlFoto = url
     }
-    const { error } = await supabase.from('giocatori').insert([{ Nome: nuovoNome, Punti: 1000, user_id: user.id, foto: urlFoto, partite: 0 }])
+    // QUI ABBIAMO MESSO PUNTI A 0
+    const { error } = await supabase.from('giocatori').insert([{ Nome: nuovoNome, Punti: 0, user_id: user.id, foto: urlFoto, partite: 0 }])
     if (!error) { setNuovoNome(''); setFileFoto(null); prendiGiocatori(); }
     setInviando(false)
   }
@@ -90,13 +91,12 @@ export default function Home() {
 
   const salvaMatch = async () => {
     if (!vincitore1Id || !vincitore2Id || !sconfitto1Id || !sconfitto2Id || !risultatoMatch.trim()) {
-      return alert("Compila tutti i campi! Seleziona 4 giocatori e inserisci il risultato.")
+      return alert("Compila tutti i campi!")
     }
     
-    // Controllo per evitare che qualcuno giochi contro se stesso o due volte nella stessa squadra
     const giocatoriSelezionati = new Set([vincitore1Id, vincitore2Id, sconfitto1Id, sconfitto2Id])
     if (giocatoriSelezionati.size !== 4) {
-      return alert("Attenzione: hai selezionato lo stesso giocatore più di una volta!")
+      return alert("Hai selezionato lo stesso giocatore più di una volta!")
     }
     
     setInviando(true)
@@ -115,7 +115,6 @@ export default function Home() {
     }])
 
     if (!error) {
-      // Aggiorna i punti di ENTRAMBI i vincitori (+50 a testa)
       await supabase.from('giocatori').update({ Punti: v1.Punti + 50 }).eq('id', v1.id)
       await supabase.from('giocatori').update({ Punti: v2.Punti + 50 }).eq('id', v2.id)
       
@@ -195,7 +194,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* FORM NUOVO MATCH (2 vs 2) */}
+        {/* FORM NUOVO MATCH */}
         {user && giocatori.length > 3 && (
           <div className="mb-10">
             {!mostraFormPartita ? (
@@ -210,7 +209,6 @@ export default function Home() {
                 </div>
                 
                 <div className="space-y-4 mb-6">
-                  {/* Coppia Vincente */}
                   <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
                     <span className="text-xs font-black uppercase text-blue-800 mb-2 block">🏆 Squadra Vincente</span>
                     <div className="flex flex-col gap-2">
@@ -225,7 +223,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Coppia Sconfitta */}
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
                     <span className="text-xs font-black uppercase text-gray-500 mb-2 block">🥵 Squadra Sconfitta</span>
                     <div className="flex flex-col gap-2">
@@ -246,9 +243,6 @@ export default function Home() {
                 <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-black uppercase shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
                   {inviando ? 'Salvataggio in corso...' : 'Conferma Referto'}
                 </button>
-                <div className="bg-blue-50 text-blue-600 text-xs text-center font-bold uppercase p-3 rounded-xl mt-4">
-                  I vincitori guadagneranno +50 punti a testa
-                </div>
               </div>
             )}
           </div>
@@ -264,7 +258,6 @@ export default function Home() {
           <div className="flex flex-col gap-4">
             {giocatori.map((g, index) => (
               <div key={g.id} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50">
-                
                 <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg sm:text-xl shadow-inner ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-blue-900 ring-4 ring-yellow-400/40' : index === 1 ? 'bg-gray-200 text-gray-600' : index === 2 ? 'bg-orange-200 text-orange-800' : 'bg-blue-50 text-blue-300'}`}>
                     {index + 1}
@@ -299,22 +292,13 @@ export default function Home() {
                   </div>
                 </div>
                 
-                {editingId !== g.id && (
-                  <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                    <div className="bg-blue-600 p-2 sm:p-3 rounded-2xl min-w-[70px] sm:min-w-[80px] text-center shadow-lg transform group-hover:scale-105 transition-transform">
-                      <span className="text-xl sm:text-2xl font-black text-white leading-none tracking-tight">{g.Punti}</span>
-                    </div>
+                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                  <div className="bg-blue-600 p-2 sm:p-3 rounded-2xl min-w-[70px] sm:min-w-[80px] text-center shadow-lg transform group-hover:scale-105 transition-transform">
+                    <span className="text-xl sm:text-2xl font-black text-white leading-none tracking-tight">{g.Punti}</span>
                   </div>
-                )}
+                </div>
               </div>
             ))}
-            
-            {giocatori.length === 0 && (
-               <div className="bg-white/10 backdrop-blur-md p-10 rounded-3xl text-center border border-white/20">
-                 <div className="text-5xl mb-4 opacity-50">🎾</div>
-                 <p className="font-bold text-blue-100 uppercase tracking-widest text-sm drop-shadow-md">Il campo è vuoto</p>
-               </div>
-            )}
           </div>
         </div>
 
@@ -338,11 +322,10 @@ export default function Home() {
                        <span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span>
                      </div>
                      <div className="flex flex-col w-[42%] text-right">
-                       <span className="text-white/60 text-[10px] mb-1">Sconfitti</span>
+                       <span className="text-white/60 text-[10px] mb-1">Sconfitto</span>
                        <span className="text-blue-100 break-words drop-shadow-md leading-tight">{p.sconfitto}</span>
                      </div>
                    </div>
-                   
                    <div className="mt-2 text-center bg-blue-900/60 rounded-2xl py-2 font-black text-base text-yellow-400 border border-blue-800/50 shadow-inner backdrop-blur-sm">
                      {p.risultato}
                    </div>
