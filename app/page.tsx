@@ -19,10 +19,12 @@ export default function Home() {
   const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
 
-  // Stati per REGISTRA PARTITA
+  // Stati per REGISTRA PARTITA (2 vs 2)
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
-  const [vincitoreId, setVincitoreId] = useState('')
-  const [sconfittoId, setSconfittoId] = useState('')
+  const [vincitore1Id, setVincitore1Id] = useState('')
+  const [vincitore2Id, setVincitore2Id] = useState('')
+  const [sconfitto1Id, setSconfitto1Id] = useState('')
+  const [sconfitto2Id, setSconfitto2Id] = useState('')
   const [risultatoMatch, setRisultatoMatch] = useState('')
 
   useEffect(() => {
@@ -87,24 +89,40 @@ export default function Home() {
   }
 
   const salvaMatch = async () => {
-    if (!vincitoreId || !sconfittoId || !risultatoMatch.trim()) return alert("Compila tutti i campi!")
-    if (vincitoreId === sconfittoId) return alert("Un giocatore non può giocare contro se stesso!")
+    if (!vincitore1Id || !vincitore2Id || !sconfitto1Id || !sconfitto2Id || !risultatoMatch.trim()) {
+      return alert("Compila tutti i campi! Seleziona 4 giocatori e inserisci il risultato.")
+    }
+    
+    // Controllo per evitare che qualcuno giochi contro se stesso o due volte nella stessa squadra
+    const giocatoriSelezionati = new Set([vincitore1Id, vincitore2Id, sconfitto1Id, sconfitto2Id])
+    if (giocatoriSelezionati.size !== 4) {
+      return alert("Attenzione: hai selezionato lo stesso giocatore più di una volta!")
+    }
     
     setInviando(true)
-    const vincitore = giocatori.find(g => g.id.toString() === vincitoreId)
-    const sconfitto = giocatori.find(g => g.id.toString() === sconfittoId)
+    const v1 = giocatori.find(g => g.id.toString() === vincitore1Id)
+    const v2 = giocatori.find(g => g.id.toString() === vincitore2Id)
+    const s1 = giocatori.find(g => g.id.toString() === sconfitto1Id)
+    const s2 = giocatori.find(g => g.id.toString() === sconfitto2Id)
+
+    const nomeVincitori = `${v1.Nome} & ${v2.Nome}`
+    const nomeSconfitti = `${s1.Nome} & ${s2.Nome}`
 
     const { error } = await supabase.from('partite').insert([{
-      vincitore: vincitore.Nome,
-      sconfitto: sconfitto.Nome,
+      vincitore: nomeVincitori,
+      sconfitto: nomeSconfitti,
       risultato: risultatoMatch
     }])
 
     if (!error) {
-      // Aggiorna i punti del vincitore in automatico (+50)
-      await supabase.from('giocatori').update({ Punti: vincitore.Punti + 50 }).eq('id', vincitore.id)
-      setVincitoreId('')
-      setSconfittoId('')
+      // Aggiorna i punti di ENTRAMBI i vincitori (+50 a testa)
+      await supabase.from('giocatori').update({ Punti: v1.Punti + 50 }).eq('id', v1.id)
+      await supabase.from('giocatori').update({ Punti: v2.Punti + 50 }).eq('id', v2.id)
+      
+      setVincitore1Id('')
+      setVincitore2Id('')
+      setSconfitto1Id('')
+      setSconfitto2Id('')
       setRisultatoMatch('')
       setMostraFormPartita(false)
       prendiGiocatori()
@@ -118,7 +136,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#005bb7] text-white p-4 sm:p-8 font-sans flex flex-col items-center overflow-x-hidden relative">
       
-      {/* SFONDO CAMPO DA PADEL (Linee Bianche) */}
+      {/* SFONDO CAMPO DA PADEL */}
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center items-center overflow-hidden opacity-20">
         <div className="relative w-[200vw] h-[150vh] sm:w-[120vw] sm:h-[120vh] border-[6px] border-white -rotate-12 scale-110">
           <div className="absolute top-1/2 left-0 w-full h-[6px] bg-white -translate-y-1/2"></div>
@@ -177,8 +195,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* FORM NUOVO MATCH */}
-        {user && giocatori.length > 1 && (
+        {/* FORM NUOVO MATCH (2 vs 2) */}
+        {user && giocatori.length > 3 && (
           <div className="mb-10">
             {!mostraFormPartita ? (
               <button onClick={() => setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition-all flex justify-center items-center gap-3 border-2 border-yellow-300">
@@ -191,32 +209,52 @@ export default function Home() {
                   <button onClick={() => setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs transition-colors">ANNULLA</button>
                 </div>
                 
-                <div className="space-y-3 mb-6">
-                  <select value={vincitoreId} onChange={e => setVincitoreId(e.target.value)} className="w-full p-4 bg-blue-50 rounded-2xl font-black outline-none border-2 border-transparent focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer">
-                    <option value="">🏆 Seleziona il Vincitore</option>
-                    {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
-                  </select>
+                <div className="space-y-4 mb-6">
+                  {/* Coppia Vincente */}
+                  <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                    <span className="text-xs font-black uppercase text-blue-800 mb-2 block">🏆 Squadra Vincente</span>
+                    <div className="flex flex-col gap-2">
+                      <select value={vincitore1Id} onChange={e => setVincitore1Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer text-sm">
+                        <option value="">Giocatore 1</option>
+                        {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
+                      </select>
+                      <select value={vincitore2Id} onChange={e => setVincitore2Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer text-sm">
+                        <option value="">Giocatore 2</option>
+                        {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
+                      </select>
+                    </div>
+                  </div>
 
-                  <select value={sconfittoId} onChange={e => setSconfittoId(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl font-black outline-none border-2 border-transparent focus:border-gray-300 text-gray-600 transition-all appearance-none cursor-pointer">
-                    <option value="">🥵 Seleziona lo Sconfitto</option>
-                    {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
-                  </select>
+                  {/* Coppia Sconfitta */}
+                  <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
+                    <span className="text-xs font-black uppercase text-gray-500 mb-2 block">🥵 Squadra Sconfitta</span>
+                    <div className="flex flex-col gap-2">
+                      <select value={sconfitto1Id} onChange={e => setSconfitto1Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer text-sm">
+                        <option value="">Giocatore 1</option>
+                        {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
+                      </select>
+                      <select value={sconfitto2Id} onChange={e => setSconfitto2Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer text-sm">
+                        <option value="">Giocatore 2</option>
+                        {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
+                      </select>
+                    </div>
+                  </div>
 
-                  <input type="text" placeholder="Risultato (es. 6-4, 6-2)" value={risultatoMatch} onChange={e => setRisultatoMatch(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-center focus:ring-2 focus:ring-blue-500 border border-gray-100 transition-all" />
+                  <input type="text" placeholder="Risultato (es. 6-4, 6-2)" value={risultatoMatch} onChange={e => setRisultatoMatch(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-center focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all" />
                 </div>
                 
                 <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-black uppercase shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
                   {inviando ? 'Salvataggio in corso...' : 'Conferma Referto'}
                 </button>
                 <div className="bg-blue-50 text-blue-600 text-xs text-center font-bold uppercase p-3 rounded-xl mt-4">
-                  Il vincitore guadagnerà +50 punti
+                  I vincitori guadagneranno +50 punti a testa
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* RANKING ATLETI - STILE CARD MODERNO */}
+        {/* RANKING ATLETI */}
         <div className="mb-12">
           <div className="flex items-center gap-4 mb-6 px-2">
             <h2 className="text-2xl font-black italic text-yellow-400 tracking-tight drop-shadow-md">Leaderboard</h2>
@@ -227,7 +265,6 @@ export default function Home() {
             {giocatori.map((g, index) => (
               <div key={g.id} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50">
                 
-                {/* Posizione, Foto, Nome */}
                 <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg sm:text-xl shadow-inner ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-blue-900 ring-4 ring-yellow-400/40' : index === 1 ? 'bg-gray-200 text-gray-600' : index === 2 ? 'bg-orange-200 text-orange-800' : 'bg-blue-50 text-blue-300'}`}>
                     {index + 1}
@@ -262,7 +299,6 @@ export default function Home() {
                   </div>
                 </div>
                 
-                {/* Punti (Senza i bottoni + e -) */}
                 {editingId !== g.id && (
                   <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                     <div className="bg-blue-600 p-2 sm:p-3 rounded-2xl min-w-[70px] sm:min-w-[80px] text-center shadow-lg transform group-hover:scale-105 transition-transform">
@@ -282,7 +318,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* STORICO MATCH (FEED MODERNO) */}
+        {/* STORICO MATCH */}
         {partite.length > 0 && (
           <div className="mb-10">
              <div className="flex items-center gap-4 mb-6 px-2">
@@ -293,21 +329,21 @@ export default function Home() {
              <div className="flex flex-col gap-4">
                {partite.map(p => (
                  <div key={p.id} className="bg-white/15 backdrop-blur-md border border-white/20 p-5 rounded-3xl shadow-xl flex flex-col gap-3 hover:bg-white/20 transition-colors">
-                   <div className="flex justify-between items-center text-sm sm:text-base font-black uppercase tracking-tight">
-                     <div className="flex flex-col w-[40%]">
-                       <span className="text-yellow-400 text-xs mb-1">Vincitore 🏆</span>
+                   <div className="flex justify-between items-center text-sm font-black uppercase tracking-tight">
+                     <div className="flex flex-col w-[42%]">
+                       <span className="text-yellow-400 text-[10px] mb-1">Vincitori 🏆</span>
                        <span className="text-white break-words drop-shadow-md leading-tight">{p.vincitore}</span>
                      </div>
-                     <div className="w-[20%] text-center">
-                       <span className="bg-blue-900/80 text-blue-200 px-3 py-1.5 rounded-xl text-xs shadow-inner">VS</span>
+                     <div className="w-[16%] text-center">
+                       <span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span>
                      </div>
-                     <div className="flex flex-col w-[40%] text-right">
-                       <span className="text-white/60 text-xs mb-1">Sconfitto</span>
+                     <div className="flex flex-col w-[42%] text-right">
+                       <span className="text-white/60 text-[10px] mb-1">Sconfitti</span>
                        <span className="text-blue-100 break-words drop-shadow-md leading-tight">{p.sconfitto}</span>
                      </div>
                    </div>
                    
-                   <div className="mt-2 text-center bg-blue-900/60 rounded-2xl py-2.5 font-black text-lg text-yellow-400 border border-blue-800/50 shadow-inner backdrop-blur-sm">
+                   <div className="mt-2 text-center bg-blue-900/60 rounded-2xl py-2 font-black text-base text-yellow-400 border border-blue-800/50 shadow-inner backdrop-blur-sm">
                      {p.risultato}
                    </div>
                  </div>
