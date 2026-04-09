@@ -13,13 +13,11 @@ export default function Home() {
   const [inviando, setInviando] = useState(false)
   const [mostraLogin, setMostraLogin] = useState(false)
 
-  // Stati per la MODIFICA profilo
   const [editingId, setEditingId] = useState<any>(null)
   const [editNome, setEditNome] = useState('')
   const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
 
-  // Stati per REGISTRA PARTITA (2 vs 2)
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
   const [vincitore1Id, setVincitore1Id] = useState('')
   const [vincitore2Id, setVincitore2Id] = useState('')
@@ -71,8 +69,15 @@ export default function Home() {
       const url = await uploadFotoHelper(fileFoto)
       if (url) urlFoto = url
     }
-    // QUI ABBIAMO MESSO PUNTI A 0
-    const { error } = await supabase.from('giocatori').insert([{ Nome: nuovoNome, Punti: 0, user_id: user.id, foto: urlFoto, partite: 0 }])
+    const { error } = await supabase.from('giocatori').insert([{ 
+      Nome: nuovoNome, 
+      Punti: 0, 
+      user_id: user.id, 
+      foto: urlFoto, 
+      partite: 0,
+      vinte: 0,
+      perse: 0 
+    }])
     if (!error) { setNuovoNome(''); setFileFoto(null); prendiGiocatori(); }
     setInviando(false)
   }
@@ -115,8 +120,28 @@ export default function Home() {
     }])
 
     if (!error) {
-      await supabase.from('giocatori').update({ Punti: v1.Punti + 50 }).eq('id', v1.id)
-      await supabase.from('giocatori').update({ Punti: v2.Punti + 50 }).eq('id', v2.id)
+      // AGGIORNAMENTO STATISTICHE E PUNTI
+      await supabase.from('giocatori').update({ 
+        Punti: v1.Punti + 50, 
+        partite: (v1.partite || 0) + 1, 
+        vinte: (v1.vinte || 0) + 1 
+      }).eq('id', v1.id)
+      
+      await supabase.from('giocatori').update({ 
+        Punti: v2.Punti + 50, 
+        partite: (v2.partite || 0) + 1, 
+        vinte: (v2.vinte || 0) + 1 
+      }).eq('id', v2.id)
+
+      await supabase.from('giocatori').update({ 
+        partite: (s1.partite || 0) + 1, 
+        perse: (s1.perse || 0) + 1 
+      }).eq('id', s1.id)
+      
+      await supabase.from('giocatori').update({ 
+        partite: (s2.partite || 0) + 1, 
+        perse: (s2.perse || 0) + 1 
+      }).eq('id', s2.id)
       
       setVincitore1Id('')
       setVincitore2Id('')
@@ -134,8 +159,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#005bb7] text-white p-4 sm:p-8 font-sans flex flex-col items-center overflow-x-hidden relative">
-      
-      {/* SFONDO CAMPO DA PADEL */}
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center items-center overflow-hidden opacity-20">
         <div className="relative w-[200vw] h-[150vh] sm:w-[120vw] sm:h-[120vh] border-[6px] border-white -rotate-12 scale-110">
           <div className="absolute top-1/2 left-0 w-full h-[6px] bg-white -translate-y-1/2"></div>
@@ -147,7 +170,6 @@ export default function Home() {
       
       <div className="w-full max-w-lg relative z-10">
         
-        {/* HEADER */}
         <div className="flex justify-end mb-6">
           {user ? (
             <button onClick={() => supabase.auth.signOut()} className="text-[11px] font-bold text-blue-200 hover:text-white transition-colors bg-blue-900/60 px-4 py-2 rounded-full backdrop-blur-sm border border-blue-800/50">
@@ -160,13 +182,11 @@ export default function Home() {
           )}
         </div>
 
-        {/* LOGO */}
         <div className="text-center mb-10">
           <h1 className="text-6xl md:text-8xl font-black italic text-yellow-400 drop-shadow-[0_5px_5px_rgba(0,0,0,0.3)] tracking-tighter">padelg<span className="text-white text-4xl">.</span></h1>
           <p className="text-blue-100 text-sm md:text-base font-bold tracking-widest uppercase mt-2 opacity-90 drop-shadow-md">Official Ranking</p>
         </div>
 
-        {/* BOX LOGIN */}
         {mostraLogin && !user && (
           <div className="bg-white p-8 rounded-3xl text-black mb-10 shadow-2xl animate-in fade-in zoom-in duration-300 border border-gray-100">
             <h2 className="text-2xl font-black text-blue-900 mb-6 text-center tracking-tight">Accedi o Registrati</h2>
@@ -179,7 +199,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* CREAZIONE PROFILO */}
         {user && !giocatori.some(g => g.user_id === user.id) && (
           <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-8 rounded-3xl text-blue-900 mb-10 shadow-2xl animate-in slide-in-from-bottom-4">
             <h2 className="text-xl font-black uppercase mb-4 text-center tracking-widest">Crea il tuo profilo</h2>
@@ -194,7 +213,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* FORM NUOVO MATCH */}
         {user && giocatori.length > 3 && (
           <div className="mb-10">
             {!mostraFormPartita ? (
@@ -287,6 +305,13 @@ export default function Home() {
                             Tu ✏️
                           </button>
                         )}
+                        
+                        {/* NUOVE STATISTICHE SOTTO IL NOME */}
+                        <div className="w-full flex gap-3 text-[11px] sm:text-xs font-bold mt-0.5">
+                          <span className="text-blue-400/80">Match: {g.partite || 0}</span>
+                          <span className="text-green-500/90">Vinte: {g.vinte || 0}</span>
+                          <span className="text-red-400/80">Perse: {g.perse || 0}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -322,7 +347,7 @@ export default function Home() {
                        <span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span>
                      </div>
                      <div className="flex flex-col w-[42%] text-right">
-                       <span className="text-white/60 text-[10px] mb-1">Sconfitto</span>
+                       <span className="text-white/60 text-[10px] mb-1">Sconfitti</span>
                        <span className="text-blue-100 break-words drop-shadow-md leading-tight">{p.sconfitto}</span>
                      </div>
                    </div>
