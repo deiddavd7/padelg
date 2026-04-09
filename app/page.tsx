@@ -86,11 +86,6 @@ export default function Home() {
     setSalvataggioInCorso(false)
   }
 
-  const registraRisultato = async (idRiga: any, punti: number, variaz: number) => {
-    await supabase.from('giocatori').update({ Punti: punti + variaz }).eq('id', idRiga)
-    prendiGiocatori()
-  }
-
   const salvaMatch = async () => {
     if (!vincitoreId || !sconfittoId || !risultatoMatch.trim()) return alert("Compila tutti i campi!")
     if (vincitoreId === sconfittoId) return alert("Un giocatore non può giocare contro se stesso!")
@@ -106,6 +101,7 @@ export default function Home() {
     }])
 
     if (!error) {
+      // Aggiorna i punti del vincitore in automatico (+50)
       await supabase.from('giocatori').update({ Punti: vincitore.Punti + 50 }).eq('id', vincitore.id)
       setVincitoreId('')
       setSconfittoId('')
@@ -125,13 +121,9 @@ export default function Home() {
       {/* SFONDO CAMPO DA PADEL (Linee Bianche) */}
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center items-center overflow-hidden opacity-20">
         <div className="relative w-[200vw] h-[150vh] sm:w-[120vw] sm:h-[120vh] border-[6px] border-white -rotate-12 scale-110">
-          {/* Rete */}
           <div className="absolute top-1/2 left-0 w-full h-[6px] bg-white -translate-y-1/2"></div>
-          {/* Linea di Servizio Sinistra */}
           <div className="absolute top-[25%] left-0 w-full h-[6px] bg-white"></div>
-          {/* Linea di Servizio Destra */}
           <div className="absolute top-[75%] left-0 w-full h-[6px] bg-white"></div>
-          {/* Linea Centrale di Battuta */}
           <div className="absolute top-[25%] left-1/2 w-[6px] h-[50%] bg-white -translate-x-1/2"></div>
         </div>
       </div>
@@ -270,11 +262,9 @@ export default function Home() {
                   </div>
                 </div>
                 
-                {/* Punti e Controlli */}
+                {/* Punti (Senza i bottoni + e -) */}
                 {editingId !== g.id && (
                   <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                    <button onClick={() => registraRisultato(g.id, g.Punti, -50)} className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center bg-gray-100 rounded-xl font-black text-gray-400 hover:bg-red-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 md:opacity-100">-</button>
-                    <button onClick={() => registraRisultato(g.id, g.Punti, 50)} className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center bg-blue-50 text-blue-600 rounded-xl font-black hover:bg-blue-600 hover:text-white transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 md:opacity-100">+</button>
                     <div className="bg-blue-600 p-2 sm:p-3 rounded-2xl min-w-[70px] sm:min-w-[80px] text-center shadow-lg transform group-hover:scale-105 transition-transform">
                       <span className="text-xl sm:text-2xl font-black text-white leading-none tracking-tight">{g.Punti}</span>
                     </div>
