@@ -258,10 +258,10 @@ export default function Home() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 truncate tracking-tight">{g.Nome}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 flex-wrap">
+                        <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 break-words tracking-tight">{g.Nome}</span>
                         {user && g.user_id === user.id && (
-                          <button onClick={() => { setEditingId(g.id); setEditNome(g.Nome); }} className="text-[9px] bg-yellow-400 text-blue-900 px-3 py-1 rounded-full font-black uppercase shadow-sm hover:scale-105 transition-transform flex items-center gap-1">
+                          <button onClick={() => { setEditingId(g.id); setEditNome(g.Nome); }} className="text-[9px] bg-yellow-400 text-blue-900 px-3 py-1 rounded-full font-black uppercase shadow-sm hover:scale-105 transition-transform inline-flex items-center gap-1 w-max">
                             Tu ✏️
                           </button>
                         )}
@@ -306,14 +306,14 @@ export default function Home() {
                    <div className="flex justify-between items-center text-sm sm:text-base font-black uppercase tracking-tight">
                      <div className="flex flex-col w-[40%]">
                        <span className="text-yellow-400 text-xs mb-1">Vincitore 🏆</span>
-                       <span className="text-white truncate drop-shadow-md">{p.vincitore}</span>
+                       <span className="text-white break-words drop-shadow-md leading-tight">{p.vincitore}</span>
                      </div>
                      <div className="w-[20%] text-center">
                        <span className="bg-blue-900/80 text-blue-200 px-3 py-1.5 rounded-xl text-xs shadow-inner">VS</span>
                      </div>
                      <div className="flex flex-col w-[40%] text-right">
                        <span className="text-white/60 text-xs mb-1">Sconfitto</span>
-                       <span className="text-blue-100 truncate drop-shadow-md">{p.sconfitto}</span>
+                       <span className="text-blue-100 break-words drop-shadow-md leading-tight">{p.sconfitto}</span>
                      </div>
                    </div>
                    
