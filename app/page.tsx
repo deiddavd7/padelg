@@ -3,7 +3,6 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 export default function Home() {
-  // STATI ESISTENTI (Ranking, Partite, Profilo, Auth)
   const [giocatori, setGiocatori] = useState<any[]>([])
   const [partite, setPartite] = useState<any[]>([])
   const [user, setUser] = useState<any>(null)
@@ -36,7 +35,6 @@ export default function Home() {
   const [editRacchetta, setEditRacchetta] = useState('')
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
 
-  // 🚀 NUOVI STATI PER LA NAVIGAZIONE E LA CHAT
   const [activeTab, setActiveTab] = useState<'RANKING' | 'CHAT'>('RANKING')
   const [messaggi, setMessaggi] = useState<any[]>([])
   const [nuovoMessaggio, setNuovoMessaggio] = useState('')
@@ -49,7 +47,6 @@ export default function Home() {
     prendiPartite()
     prendiMessaggi()
 
-    // 🎧 Iscrizione in Tempo Reale ai nuovi messaggi
     const channel = supabase.channel('chat_spogliatoio')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messaggi' }, payload => {
         setMessaggi(correnti => [...correnti, payload.new])
@@ -62,7 +59,6 @@ export default function Home() {
     }
   }, [])
 
-  // Auto-scroll in basso quando arriva un nuovo messaggio
   useEffect(() => {
     if (activeTab === 'CHAT') {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -93,7 +89,6 @@ export default function Home() {
   }
 
   const prendiMessaggi = async () => {
-    // Prende gli ultimi 50 messaggi, in ordine cronologico
     const { data } = await supabase.from('messaggi').select('*').order('created_at', { ascending: false }).limit(50)
     if (data) setMessaggi(data.reverse())
   }
@@ -196,17 +191,30 @@ export default function Home() {
   }
 
   const confermaMatch = async (match: any) => {
-    if (!confirm("Confermi questo risultato? I punti verranno assegnati ufficialmente.")) return;
+    if (!confirm("Confermi questo risultato? I punti verranno calcolati in base alla classifica attuale delle squadre.")) return;
+    
     await supabase.from('partite').update({ stato: 'Confermato' }).eq('id', match.id)
+
     const v1 = giocatori.find(g => g.id.toString() === match.v1_id)
     const v2 = giocatori.find(g => g.id.toString() === match.v2_id)
     const s1 = giocatori.find(g => g.id.toString() === match.s1_id)
     const s2 = giocatori.find(g => g.id.toString() === match.s2_id)
 
-    if(v1) await supabase.from('giocatori').update({ Punti: v1.Punti + 50, partite: (v1.partite||0)+1, vinte: (v1.vinte||0)+1 }).eq('id', v1.id)
-    if(v2) await supabase.from('giocatori').update({ Punti: v2.Punti + 50, partite: (v2.partite||0)+1, vinte: (v2.vinte||0)+1 }).eq('id', v2.id)
-    if(s1) await supabase.from('giocatori').update({ partite: (s1.partite||0)+1, perse: (s1.perse||0)+1 }).eq('id', s1.id)
-    if(s2) await supabase.from('giocatori').update({ partite: (s2.partite||0)+1, perse: (s2.perse||0)+1 }).eq('id', s2.id)
+    const ratingVincitori = ((v1?.Punti || 0) + (v2?.Punti || 0)) / 2;
+    const ratingSconfitti = ((s1?.Punti || 0) + (s2?.Punti || 0)) / 2;
+
+    const differenza = ratingSconfitti - ratingVincitori;
+    const probVittoria = 1 / (1 + Math.pow(10, differenza / 400));
+    
+    let puntiGuadagnati = Math.round(60 * (1 - probVittoria));
+    if (puntiGuadagnati < 10) puntiGuadagnati = 10; 
+    let puntiPersi = Math.round(puntiGuadagnati / 2); 
+
+    if(v1) await supabase.from('giocatori').update({ Punti: (v1.Punti || 0) + puntiGuadagnati, partite: (v1.partite||0)+1, vinte: (v1.vinte||0)+1 }).eq('id', v1.id)
+    if(v2) await supabase.from('giocatori').update({ Punti: (v2.Punti || 0) + puntiGuadagnati, partite: (v2.partite||0)+1, vinte: (v2.vinte||0)+1 }).eq('id', v2.id)
+    
+    if(s1) await supabase.from('giocatori').update({ Punti: Math.max(0, (s1.Punti || 0) - puntiPersi), partite: (s1.partite||0)+1, perse: (s1.perse||0)+1 }).eq('id', s1.id)
+    if(s2) await supabase.from('giocatori').update({ Punti: Math.max(0, (s2.Punti || 0) - puntiPersi), partite: (s2.partite||0)+1, perse: (s2.perse||0)+1 }).eq('id', s2.id)
 
     prendiGiocatori(); prendiPartite();
   }
@@ -224,7 +232,6 @@ export default function Home() {
     if (!error) prendiPartite(); else alert("Errore: " + error.message)
   }
 
-  // 🚀 INVIA MESSAGGIO IN CHAT
   const inviaMessaggioChat = async (e: any) => {
     e.preventDefault();
     if (!nuovoMessaggio.trim() || !mioGiocatoreId || !mioNome) return;
@@ -297,8 +304,8 @@ export default function Home() {
   };
 
   return (
-    // Ho aggiunto 'pb-24' per lasciare spazio alla barra in basso
-    <main className="min-h-screen bg-[#005bb7] text-white p-4 sm:p-8 font-sans flex flex-col items-center overflow-x-hidden relative pb-24">
+    // Ho aumentato il padding inferiore (pb-36) della pagina principale
+    <main className="min-h-screen bg-[#005bb7] text-white p-4 sm:p-8 font-sans flex flex-col items-center overflow-x-hidden relative pb-36">
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center items-center overflow-hidden opacity-20">
         <div className="relative w-[200vw] h-[150vh] sm:w-[120vw] sm:h-[120vh] border-[6px] border-white -rotate-12 scale-110">
           <div className="absolute top-1/2 left-0 w-full h-[6px] bg-white -translate-y-1/2"></div>
@@ -308,10 +315,9 @@ export default function Home() {
         </div>
       </div>
       
-      <div className="w-full max-w-lg relative z-10">
+      <div className="w-full max-w-lg relative z-10 flex flex-col min-h-full">
         
-        {/* HEADER & LOGIN */}
-        <div className="flex justify-end mb-6">
+        <div className="flex justify-end mb-6 shrink-0">
           {user ? (
             <button onClick={() => supabase.auth.signOut()} className="text-[11px] font-bold text-blue-200 hover:text-white transition-colors bg-blue-900/60 px-4 py-2 rounded-full backdrop-blur-sm border border-blue-800/50">
               LOGOUT ({user.email})
@@ -323,16 +329,13 @@ export default function Home() {
           )}
         </div>
 
-        <div className="text-center mb-10">
+        <div className="text-center mb-10 shrink-0">
           <h1 className="text-6xl md:text-8xl font-black italic text-yellow-400 drop-shadow-[0_5px_5px_rgba(0,0,0,0.3)] tracking-tighter">padelg<span className="text-white text-4xl">.</span></h1>
           <p className="text-blue-100 text-sm md:text-base font-bold tracking-widest uppercase mt-2 opacity-90 drop-shadow-md">Official Ranking</p>
         </div>
-
-        {/* LOGICA DELLA NAVIGAZIONE (Mostra contenuto in base al tab selezionato) */}
         
         {activeTab === 'RANKING' && (
-          <div className="animate-in fade-in duration-300">
-            {/* BOX LOGIN */}
+          <div className="animate-in fade-in duration-300 flex-1">
             {mostraLogin && !user && (
               <div className="bg-white p-8 rounded-3xl text-black mb-10 shadow-2xl">
                 <h2 className="text-2xl font-black text-blue-900 mb-6 text-center">Accedi o Registrati</h2>
@@ -345,7 +348,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* CREAZIONE PROFILO */}
             {user && !giocatori.some(g => g.user_id === user.id) && (
               <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-8 rounded-3xl text-blue-900 mb-10 shadow-2xl">
                 <h2 className="text-xl font-black uppercase mb-4 text-center tracking-widest">Crea il tuo profilo</h2>
@@ -356,7 +358,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* FORM NUOVO MATCH AVANZATO */}
             {user && giocatori.length > 3 && (
               <div className="mb-10">
                 {!mostraFormPartita ? (
@@ -415,7 +416,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* RANKING ATLETI (HOME) */}
             <div className="mb-12">
               <div className="flex items-center gap-4 mb-6 px-2">
                 <h2 className="text-2xl font-black italic text-yellow-400">Leaderboard</h2>
@@ -462,7 +462,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* FEED STORICO MATCH */}
             {partite.length > 0 && (
               <div className="mb-10">
                 <div className="flex items-center gap-4 mb-6 px-2">
@@ -510,12 +509,14 @@ export default function Home() {
                 </div>
               </div>
             )}
+            
+            {/* 🚀 SPAZIATORE INVISIBILE PER LA BARRA BOTTOM 🚀 */}
+            <div className="h-10"></div>
+
           </div>
         )}
 
-        {/* ========================================= */}
-        {/* 💬 TAB SPOGLIATOIO (CHAT GLOBALE) */}
-        {/* ========================================= */}
+        {/* 💬 TAB SPOGLIATOIO */}
         {activeTab === 'CHAT' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300 flex flex-col h-[calc(100vh-160px)]">
             <div className="flex items-center gap-3 mb-4">
@@ -526,7 +527,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Area Messaggi */}
             <div className="flex-1 bg-white/10 backdrop-blur-md rounded-3xl p-4 overflow-y-auto flex flex-col gap-3 border border-white/20 shadow-inner">
               {messaggi.length === 0 ? (
                 <div className="m-auto text-center text-blue-200 font-bold text-sm opacity-60">
@@ -548,11 +548,9 @@ export default function Home() {
                   );
                 })
               )}
-              {/* Div invisibile per l'auto-scroll in basso */}
               <div ref={chatEndRef} />
             </div>
 
-            {/* Form invio messaggio */}
             {user ? (
               <form onSubmit={inviaMessaggioChat} className="mt-4 flex gap-2">
                 <input 
@@ -576,9 +574,6 @@ export default function Home() {
 
       </div>
 
-      {/* ========================================= */}
-      {/* 📱 BOTTOM NAVIGATION BAR */}
-      {/* ========================================= */}
       <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl border-t border-gray-200 p-3 pb-6 sm:pb-3 z-40 flex justify-around items-center shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
         <button 
           onClick={() => setActiveTab('RANKING')} 
@@ -597,12 +592,9 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ========================================= */}
-      {/* 🚀 MODALE PROFILO GIOCATORE (Rimasta invariata) */}
-      {/* ========================================= */}
       {profiloAperto && (
         <div className="fixed inset-0 z-50 bg-gray-50 overflow-y-auto flex justify-center animate-in fade-in">
-          <div className="w-full max-w-2xl min-h-screen flex flex-col relative text-blue-900 pb-20"> {/* pb-20 per non far sovrapporre la navbar al fondo */}
+          <div className="w-full max-w-2xl min-h-screen flex flex-col relative text-blue-900 pb-20"> 
             
             <div className="bg-blue-900 text-white p-6 sm:p-8 relative shadow-lg">
               <button onClick={() => setProfiloAperto(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md z-10 transition-colors">✖️</button>
