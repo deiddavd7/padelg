@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 
 export default function Home() {
   // ==========================================
-  // 1. STATI GLOBALI (Auth, Giocatori, Partite)
+  // 1. STATI GLOBALI
   // ==========================================
   const [giocatori, setGiocatori] = useState<any[]>([])
   const [partite, setPartite] = useState<any[]>([])
@@ -73,7 +73,7 @@ export default function Home() {
   const prossimiGiorni = Array.from({length: 7}).map((_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return { dataStr: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`, label: d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' }) } })
 
   // ==========================================
-  // 6. STATI EVENTI & DASHBOARD AMERICANA
+  // 6. STATI EVENTI & DASHBOARD
   // ==========================================
   const [eventi, setEventi] = useState<any[]>([])
   const [mostraFormEvento, setMostraFormEvento] = useState(false)
@@ -91,7 +91,7 @@ export default function Home() {
   const [evGameB, setEvGameB] = useState<number | ''>('')
 
   // ==========================================
-  // EFFECTS (Caricamento Iniziale & Realtime)
+  // EFFECTS
   // ==========================================
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -99,7 +99,6 @@ export default function Home() {
     
     prendiGiocatori(); prendiPartite(); prendiMessaggi(); prendiPrenotazioni(); prendiEventi();
 
-    // Sottoscrizioni in Tempo Reale
     const channelChat = supabase.channel('chat_spogliatoio').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messaggi' }, payload => { setMessaggi(c => [...c, payload.new]) }).subscribe()
     const channelPren = supabase.channel('prenotazioni_live').on('postgres_changes', { event: '*', schema: 'public', table: 'prenotazioni' }, () => { prendiPrenotazioni() }).subscribe()
     const channelEventi = supabase.channel('eventi_live').on('postgres_changes', { event: '*', schema: 'public', table: 'eventi' }, () => { prendiEventi(); if (dashboardEvento) ricaricaDashboard(dashboardEvento.id); }).subscribe()
@@ -115,7 +114,7 @@ export default function Home() {
   }, [user, giocatori])
 
   // ==========================================
-  // FETCH FUNZIONI (Dal Database)
+  // FETCH FUNZIONI
   // ==========================================
   const prendiGiocatori = async () => { const { data } = await supabase.from('giocatori').select('*').order('Punti', { ascending: false }); if (data) setGiocatori(data) }
   const prendiPartite = async () => { const { data } = await supabase.from('partite').select('*').order('created_at', { ascending: false }).limit(100); if (data) setPartite(data) }
@@ -151,27 +150,21 @@ export default function Home() {
   }
 
   // ==========================================
-  // LOGICA MATCH E ALGORITMO ELO
+  // MATCH E ALGORITMO ELO
   // ==========================================
   const salvaMatch = async () => {
-    if (!vincitore1Id||!vincitore2Id||!sconfitto1Id||!sconfitto2Id||!risultatoMatch.trim()) return alert("Dati mancanti!"); 
-    const setG = new Set([vincitore1Id,vincitore2Id,sconfitto1Id,sconfitto2Id]); if(setG.size!==4) return alert("Duplicati!"); 
-    setInviando(true); 
-    const v1 = giocatori.find(g=>g.id.toString()===vincitore1Id); const v2 = giocatori.find(g=>g.id.toString()===vincitore2Id); 
-    const s1 = giocatori.find(g=>g.id.toString()===sconfitto1Id); const s2 = giocatori.find(g=>g.id.toString()===sconfitto2Id); 
+    if (!vincitore1Id||!vincitore2Id||!sconfitto1Id||!sconfitto2Id||!risultatoMatch.trim()) return alert("Dati mancanti!"); const setG = new Set([vincitore1Id,vincitore2Id,sconfitto1Id,sconfitto2Id]); if(setG.size!==4) return alert("Duplicati!"); 
+    setInviando(true); const v1 = giocatori.find(g=>g.id.toString()===vincitore1Id); const v2 = giocatori.find(g=>g.id.toString()===vincitore2Id); const s1 = giocatori.find(g=>g.id.toString()===sconfitto1Id); const s2 = giocatori.find(g=>g.id.toString()===sconfitto2Id); 
     let u=""; if(fotoMatch)u=await uploadFotoHelper(fotoMatch)||""; 
     const {error}=await supabase.from('partite').insert([{vincitore:`${v1.Nome} & ${v2.Nome}`,sconfitto:`${s1.Nome} & ${s2.Nome}`,risultato:risultatoMatch,v1_id:v1.id.toString(),v2_id:v2.id.toString(),s1_id:s1.id.toString(),s2_id:s2.id.toString(),campo:campoMatch,note:noteMatch,foto:u,stato:'In attesa'}]); 
-    if(!error){setVincitore1Id('');setVincitore2Id('');setSconfitto1Id('');setSconfitto2Id('');setRisultatoMatch('');setCampoMatch('');setNoteMatch('');setFotoMatch(null);setMostraFormPartita(false);prendiPartite();alert("Inviato!");} 
-    setInviando(false) 
+    if(!error){setVincitore1Id('');setVincitore2Id('');setSconfitto1Id('');setSconfitto2Id('');setRisultatoMatch('');setCampoMatch('');setNoteMatch('');setFotoMatch(null);setMostraFormPartita(false);prendiPartite();alert("Inviato!");} setInviando(false) 
   }
 
   const confermaMatch = async (match:any) => { 
     if(!confirm("Confermi? I punti verranno calcolati con l'algoritmo Elo."))return; 
     await supabase.from('partite').update({stato:'Confermato'}).eq('id',match.id); 
-    const v1=giocatori.find(g=>g.id.toString()===match.v1_id); const v2=giocatori.find(g=>g.id.toString()===match.v2_id); 
-    const s1=giocatori.find(g=>g.id.toString()===match.s1_id); const s2=giocatori.find(g=>g.id.toString()===match.s2_id); 
+    const v1=giocatori.find(g=>g.id.toString()===match.v1_id); const v2=giocatori.find(g=>g.id.toString()===match.v2_id); const s1=giocatori.find(g=>g.id.toString()===match.s1_id); const s2=giocatori.find(g=>g.id.toString()===match.s2_id); 
     
-    // Algoritmo ELO
     const rv=((v1?.Punti||0)+(v2?.Punti||0))/2; const rs=((s1?.Punti||0)+(s2?.Punti||0))/2; const diff=rs-rv; const pV=1/(1+Math.pow(10,diff/400)); 
     let pG=Math.max(10,Math.round(60*(1-pV))); let pP=Math.round(pG/2); 
     
@@ -181,7 +174,6 @@ export default function Home() {
     if(s2)await supabase.from('giocatori').update({Punti:Math.max(0,(s2.Punti||0)-pP),partite:(s2.partite||0)+1,perse:(s2.perse||0)+1}).eq('id',s2.id); 
     prendiGiocatori(); prendiPartite(); 
   }
-
   const contestaMatch = async (id:any)=>{const m=prompt("Motivo:"); if(!m)return; await supabase.from('partite').update({stato:`Contestato: ${m}`}).eq('id',id); prendiPartite()}; 
   const eliminaMatch = async (id:any)=>{if(!confirm("Eliminare?"))return; await supabase.from('partite').delete().eq('id',id); prendiPartite();}; 
 
@@ -191,10 +183,26 @@ export default function Home() {
   const inviaMessaggioChat = async (e:any)=>{e.preventDefault(); if(!nuovoMessaggio.trim()||!mioGiocatoreId||!mioNome)return; await supabase.from('messaggi').insert([{mittente_id:mioGiocatoreId,mittente_nome:mioNome,testo:nuovoMessaggio}]); setNuovoMessaggio('');}
   
   // ==========================================
-  // STATISTICHE AVANZATE E GRAFICI
+  // 🏅 GAMIFICATION: LIVELLI E BADGE
   // ==========================================
+  const getLivello = (punti: number) => {
+    if(punti < 200) return { nome: 'Principiante', icona: '🌱', bg: 'bg-green-100', text: 'text-green-700' };
+    if(punti < 500) return { nome: 'Bandeja di Bronzo', icona: '🥉', bg: 'bg-orange-100', text: 'text-orange-800' };
+    if(punti < 800) return { nome: 'Vibora d\'Argento', icona: '🥈', bg: 'bg-gray-200', text: 'text-gray-800' };
+    return { nome: 'Por Tres d\'Oro', icona: '🥇', bg: 'bg-yellow-200', text: 'text-yellow-800' };
+  }
+
   const calcolaWinRate = (v:number,g:number) => {if(!g)return 0;return Math.round((v/g)*100);}
   
+  const getBadges = (g: any) => {
+    const badges = [];
+    if (g.partite >= 1) badges.push({ icon: '🎾', desc: 'Battesimo' });
+    if (g.partite >= 10) badges.push({ icon: '🛡️', desc: 'Veterano' });
+    if (g.partite >= 5 && calcolaWinRate(g.vinte, g.partite) >= 60) badges.push({ icon: '🔥', desc: 'Cecchino' });
+    if (g.Punti >= 800) badges.push({ icon: '👑', desc: 'Top Player' });
+    return badges;
+  }
+
   const WinRateDonut = ({ vinte, giocate }: { vinte: number, giocate: number }) => {
     const winRate = calcolaWinRate(vinte, giocate); const radius = 36; const circumference = 2 * Math.PI * radius; const strokeDashoffset = circumference - (winRate / 100) * circumference;
     return (
@@ -219,6 +227,24 @@ export default function Home() {
     return { partiteGiocatore: p, partnerPreferiti: Object.values(partnerCount).sort((a, b) => b.insieme - a.insieme).slice(0, 3) };
   }
 
+  // ⚔️ CALCOLO TESTA A TESTA (Nemesi)
+  const calcolaTestaATesta = (idAvversario: string) => {
+    if (!mioGiocatoreId || idAvversario === mioGiocatoreId) return null;
+    let giocateContro = 0; let vinteIo = 0; let vinteLui = 0;
+    partite.forEach(p => {
+      if (p.stato !== 'Confermato') return;
+      const ioVincitore = p.v1_id === mioGiocatoreId || p.v2_id === mioGiocatoreId;
+      const luiSconfitto = p.s1_id === idAvversario || p.s2_id === idAvversario;
+      const luiVincitore = p.v1_id === idAvversario || p.v2_id === idAvversario;
+      const ioSconfitto = p.s1_id === mioGiocatoreId || p.s2_id === mioGiocatoreId;
+
+      if (ioVincitore && luiSconfitto) { giocateContro++; vinteIo++; }
+      else if (luiVincitore && ioSconfitto) { giocateContro++; vinteLui++; }
+    });
+    if (giocateContro === 0) return null;
+    return { giocateContro, vinteIo, vinteLui };
+  }
+
   // ==========================================
   // PRENOTAZIONI E INVITI
   // ==========================================
@@ -235,11 +261,8 @@ export default function Home() {
   const creaEvento = async () => { if (!nuovoEventoTitolo.trim() || !mioGiocatoreId) return alert("Completa!"); setInviando(true); const { error } = await supabase.from('eventi').insert([{ titolo: nuovoEventoTitolo, tipo: nuovoEventoTipo, data_evento: nuovoEventoData, max_iscritti: nuovoEventoMax, creatore_id: mioGiocatoreId, iscritti: [mioGiocatoreId], stato: 'Aperto', partite_evento: [] }]); if (!error) { setMostraFormEvento(false); setNuovoEventoTitolo(''); prendiEventi(); alert("Creato!"); } setInviando(false); }
   const iscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; const is = evento.iscritti || []; if (is.length >= evento.max_iscritti) return alert("Pieno!"); if (is.includes(mioGiocatoreId)) return; await supabase.from('eventi').update({ iscritti: [...is, mioGiocatoreId] }).eq('id', evento.id); prendiEventi(); }
   const disiscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; await supabase.from('eventi').update({ iscritti: (evento.iscritti || []).filter((id:string)=>id!==mioGiocatoreId) }).eq('id', evento.id); prendiEventi(); }
-  const eliminaEvento = async (eventoId: string) => { if (!confirm("Vuoi davvero annullare questo evento?")) return; await supabase.from('eventi').delete().eq('id', eventoId); prendiEventi(); }
+  const eliminaEvento = async (eventoId: string) => { if (!confirm("Annullare?")) return; await supabase.from('eventi').delete().eq('id', eventoId); prendiEventi(); }
 
-  // ==========================================
-  // DASHBOARD EVENTO (CABINA DI REGIA)
-  // ==========================================
   const ricaricaDashboard = async (id: string) => { const { data } = await supabase.from('eventi').select('*').eq('id', id).single(); if (data) setDashboardEvento(data); }
   const avviaEvento = async (evento: any) => { if (!confirm("Chiudere le iscrizioni?")) return; await supabase.from('eventi').update({ stato: 'In Corso' }).eq('id', evento.id); prendiEventi(); }
   const aggiungiPartitaEvento = async () => {
@@ -296,20 +319,23 @@ export default function Home() {
             <div className="mb-12">
               <div className="flex items-center gap-4 mb-6 px-2"><h2 className="text-2xl font-black italic text-yellow-400">Leaderboard</h2><div className="h-1 flex-1 bg-gradient-to-r from-yellow-400 to-transparent rounded-full opacity-80"></div></div>
               <div className="flex flex-col gap-4">
-                {giocatori.map((g, i) => (
+                {giocatori.map((g, i) => {
+                  const livello = getLivello(g.Punti || 0);
+                  return (
                   <div key={g.id} onClick={()=>apriProfilo(g,i)} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50 cursor-pointer">
                     <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                       <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg sm:text-xl shadow-inner ${i===0?'bg-gradient-to-br from-yellow-300 to-yellow-500 text-blue-900 ring-4 ring-yellow-400/40':i===1?'bg-gray-200 text-gray-600':i===2?'bg-orange-200 text-orange-800':'bg-blue-50 text-blue-300'}`}>{i+1}</div>
                       {g.foto?(<img src={g.foto} className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover border-4 border-white shadow-md shrink-0"/>):(<div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-400 font-black text-2xl border-4 border-white shadow-md shrink-0">?</div>)}
                       <div className="flex flex-col min-w-0 flex-1">
                         <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 break-words tracking-tight">{g.Nome}</span>
-                        <div className="w-full flex gap-3 text-[10px] sm:text-[11px] font-bold mt-0.5"><span className="text-gray-500">Match: {g.partite||0}</span><span className="text-green-600">V: {g.vinte||0}</span><span className="text-red-500">S: {g.perse||0}</span></div>
-                        <div className="w-full max-w-[120px] mt-1 flex items-center gap-2"><div className="w-full bg-red-100 rounded-full h-1.5"><div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${calcolaWinRate(g.vinte, g.partite)}%` }}></div></div><span className="text-[9px] font-black text-gray-400">{calcolaWinRate(g.vinte, g.partite)}% WR</span></div>
+                        {/* 🏅 Badge Livello nella List */}
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md inline-block w-max mt-0.5 ${livello.bg} ${livello.text}`}>{livello.icona} {livello.nome}</span>
+                        <div className="w-full flex gap-3 text-[10px] sm:text-[11px] font-bold mt-1"><span className="text-gray-500">Match: {g.partite||0}</span><span className="text-green-600">V: {g.vinte||0}</span><span className="text-red-500">S: {g.perse||0}</span></div>
                       </div>
                     </div>
                     <div className="bg-blue-600 p-2 sm:p-3 rounded-2xl min-w-[70px] text-center shadow-lg"><span className="text-xl sm:text-2xl font-black text-white leading-none tracking-tight">{g.Punti}</span></div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
 
@@ -317,7 +343,7 @@ export default function Home() {
               <div className="mb-10">
                 {!mostraFormPartita ? ( <button onClick={()=>setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 transition-all flex justify-center items-center gap-3"><span className="text-2xl">🎾</span> Inserisci Referto</button> ) : (
                   <div className="bg-white p-6 sm:p-8 rounded-3xl text-black border border-gray-100 shadow-2xl">
-                    <div className="flex justify-between items-center mb-6"><h3 className="font-black uppercase text-sm text-blue-900 tracking-widest">Referto Passato</h3><button onClick={()=>setMostraFormPartita(false)} className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full font-bold text-xs">ANNULLA</button></div>
+                    <div className="flex justify-between items-center mb-6"><h3 className="font-black uppercase text-sm text-blue-900 tracking-widest">Referto Passato</h3><button onClick={()=>setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs">ANNULLA</button></div>
                     <div className="space-y-4 mb-6">
                       <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><span className="text-xs font-black uppercase text-blue-800 mb-2 block">🏆 Vincenti</span><div className="flex gap-2"><select value={vincitore1Id} onChange={e=>setVincitore1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 1</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select><select value={vincitore2Id} onChange={e=>setVincitore2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 2</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select></div></div>
                       <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200"><span className="text-xs font-black uppercase text-gray-500 mb-2 block">🥵 Sconfitti</span><div className="flex gap-2"><select value={sconfitto1Id} onChange={e=>setSconfitto1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 1</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select><select value={sconfitto2Id} onChange={e=>setSconfitto2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 2</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select></div></div>
@@ -377,10 +403,8 @@ export default function Home() {
               </div>
             )}
              
-             {/* SELETTORE DATA */}
+             {/* SELETTORE DATA E CAMPO */}
              <div className="flex gap-2 overflow-x-auto pb-4 mb-4 scrollbar-hide snap-x">{prossimiGiorni.map((g, i) => ( <button key={i} onClick={()=>setGiornoSelezionato(g.dataStr)} className={`snap-center shrink-0 p-3 rounded-2xl flex flex-col items-center justify-center min-w-[80px] border transition-all ${giornoSelezionato===g.dataStr?'bg-yellow-400 text-blue-900 border-yellow-300 scale-105':'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}><span className="text-xs font-bold uppercase mb-1 opacity-80">{i===0?'Oggi':i===1?'Domani':g.label.split(' ')[0]}</span><span className="text-xl font-black">{g.dataStr.split('-')[2]}</span></button> ))}</div>
-             
-             {/* SELETTORE CAMPO */}
              <div className="flex bg-blue-900/50 p-1 rounded-2xl backdrop-blur-md mb-6 border border-blue-800/50"><button onClick={()=>setCampoSelezionato('Campo 1')} className={`flex-1 py-3 rounded-xl font-black uppercase text-sm ${campoSelezionato==='Campo 1'?'bg-blue-600 text-white':'text-blue-200'}`}>Campo 1</button><button onClick={()=>setCampoSelezionato('Campo 2')} className={`flex-1 py-3 rounded-xl font-black uppercase text-sm ${campoSelezionato==='Campo 2'?'bg-blue-600 text-white':'text-blue-200'}`}>Campo 2</button></div>
              
              {/* LISTA SLOT */}
@@ -390,7 +414,7 @@ export default function Home() {
                   const occ = !!p; const eMio = p && p.creatore_id === mioGiocatoreId;
                   let conf = 1; if(p?.g2_stato==='Accettato')conf++; if(p?.g3_stato==='Accettato')conf++; if(p?.g4_stato==='Accettato')conf++;
                   return (
-                    <div key={idx} className={`flex flex-col p-4 rounded-2xl ${occ?(eMio?'bg-blue-800 border-blue-400/50':'bg-red-900/40 border-red-500/20 opacity-70'):'bg-white text-blue-900'}`}>
+                    <div key={idx} className={`flex flex-col p-4 rounded-2xl ${occ?(eMio?'bg-blue-800 border-blue-400/50':'bg-red-900/40 border-red-500/20 opacity-70'):'bg-white text-blue-900 shadow-sm'}`}>
                       <div className="flex justify-between items-center w-full"><div className="flex flex-col"><span className={`text-lg font-black ${occ?'text-white':'text-blue-900'}`}>{slot.inizio} - {slot.fine}</span>{occ && <span className="text-[10px] font-bold uppercase mt-1 text-gray-300">Da: {p.creatore_nome}</span>}</div>{!occ?<button onClick={()=>prenotaSlot(slot)} className="bg-yellow-400 text-blue-900 px-4 py-2 rounded-xl text-xs font-black uppercase">Prenota</button>:eMio?<button onClick={()=>eliminaPrenotazione(p.id)} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase">Cancella</button>:<span className="text-xs font-bold uppercase text-red-300 bg-red-900/50 px-3 py-1.5 rounded-lg">Occupato</span>}</div>
                       {occ && eMio && (
                         <div className="mt-4 pt-3 border-t border-blue-700/50 flex flex-col gap-3">
@@ -481,7 +505,7 @@ export default function Home() {
         )}
 
         {/* ============================== */}
-        {/* 💬 TAB 4: SPOGLIATOIO */}
+        {/* 💬 TAB 4: CHAT SPOGLIATOIO */}
         {/* ============================== */}
         {activeTab === 'CHAT' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300 flex flex-col h-[calc(100vh-160px)]">
@@ -489,8 +513,10 @@ export default function Home() {
             <div className="flex-1 bg-white/10 backdrop-blur-md rounded-3xl p-4 overflow-y-auto flex flex-col gap-3 border border-white/20 shadow-inner">
               {messaggi.length===0?(<div className="m-auto text-center text-blue-200 font-bold text-sm opacity-60">Nessun messaggio.</div>):messaggi.map((msg,i)=>{ const isMine=msg.mittente_id===mioGiocatoreId; return(<div key={msg.id||i} className={`flex flex-col w-3/4 max-w-[280px] ${isMine?'self-end items-end':'self-start items-start'}`}><span className="text-[10px] text-blue-200 font-bold mb-1 mx-1">{isMine?'Tu':msg.mittente_nome}</span><div className={`p-3 rounded-2xl shadow-md ${isMine?'bg-yellow-400 text-blue-900 rounded-tr-sm':'bg-white text-blue-900 rounded-tl-sm'}`}><p className="text-sm font-bold leading-snug">{msg.testo}</p></div><span className="text-[8px] text-blue-200/60 mt-1 mx-1 font-bold">{new Date(msg.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</span></div>)})} <div ref={chatEndRef}/>
             </div>
-            {user ? ( <form onSubmit={inviaMessaggioChat} className="mt-4 flex gap-2"><input type="text" placeholder="Scrivi..." value={nuovoMessaggio} onChange={e=>setNuovoMessaggio(e.target.value)} className="flex-1 p-4 bg-white rounded-2xl text-blue-900 font-bold outline-none shadow-lg focus:border-yellow-400" /><button type="submit" disabled={!nuovoMessaggio.trim()} className="bg-yellow-400 text-blue-900 p-4 rounded-2xl font-black uppercase shadow-lg disabled:opacity-50">Invia</button></form> ) : ( <div className="mt-4 bg-blue-900/60 p-4 rounded-2xl text-center border border-blue-800/50"><p className="text-xs font-bold text-yellow-400 uppercase">Devi fare l'accesso</p></div> )}
-            <div className="h-12 w-full shrink-0"></div>
+            {/* 👇 RISOLTO IL PROBLEMA DEL BORDO CHAT 👇 */}
+            <div className="mt-4 mb-24 shrink-0"> 
+              {user ? ( <form onSubmit={inviaMessaggioChat} className="flex gap-2"><input type="text" placeholder="Scrivi..." value={nuovoMessaggio} onChange={e=>setNuovoMessaggio(e.target.value)} className="flex-1 p-4 bg-white rounded-2xl text-blue-900 font-bold outline-none shadow-lg focus:border-yellow-400" /><button type="submit" disabled={!nuovoMessaggio.trim()} className="bg-yellow-400 text-blue-900 p-4 rounded-2xl font-black uppercase shadow-lg disabled:opacity-50">Invia</button></form> ) : ( <div className="bg-blue-900/60 p-4 rounded-2xl text-center border border-blue-800/50"><p className="text-xs font-bold text-yellow-400 uppercase">Devi fare l'accesso</p></div> )}
+            </div>
           </div>
         )}
 
@@ -507,7 +533,7 @@ export default function Home() {
       </div>
 
       {/* ========================================= */}
-      {/* 🚀 MODALE: SCHEDA ATLETA (Tornata!) 🚀 */}
+      {/* 🚀 MODALE: SCHEDA ATLETA (Con Gamification & Testa a Testa) */}
       {/* ========================================= */}
       {profiloAperto && (
         <div className="fixed inset-0 z-[70] bg-gray-50 overflow-y-auto flex justify-center animate-in fade-in">
@@ -525,6 +551,16 @@ export default function Home() {
                 
                 <div className="flex-1">
                   <h2 className="text-3xl font-black uppercase tracking-tight leading-none break-words">{profiloAperto.Nome}</h2>
+                  
+                  {/* 🏅 GAMIFICATION: LIVELLO */}
+                  {!isEditingProfilo && (
+                    <div className="mt-1">
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md inline-block ${getLivello(profiloAperto.Punti || 0).bg} ${getLivello(profiloAperto.Punti || 0).text}`}>
+                        {getLivello(profiloAperto.Punti || 0).icona} {getLivello(profiloAperto.Punti || 0).nome}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2 mt-2">
                     <span className="bg-yellow-400 text-blue-900 px-3 py-1 rounded-lg text-xs font-black uppercase shadow-md">#{profiloAperto.posizione} Ranking</span>
                     <span className="bg-blue-800 border border-blue-700 px-3 py-1 rounded-lg text-xs font-black uppercase shadow-md">{profiloAperto.Punti} Pts</span>
@@ -542,6 +578,7 @@ export default function Home() {
             </div>
 
             <div className="p-6 space-y-8 flex-1 -mt-4 rounded-t-3xl bg-gray-50 relative z-20">
+              
               {isEditingProfilo ? (
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-inner animate-in slide-in-from-top-4">
                   <h3 className="text-sm font-black uppercase text-blue-900 tracking-widest mb-4">Aggiorna Scheda Tecnica</h3>
@@ -550,11 +587,46 @@ export default function Home() {
                     <div className="flex gap-3"><div className="w-1/3"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Età</label><input type="number" value={editEta} onChange={(e) => setEditEta(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 outline-none" /></div><div className="w-2/3"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Lato Preferito</label><select value={editLato} onChange={(e) => setEditLato(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 outline-none text-blue-900 cursor-pointer"><option value="">Seleziona...</option><option value="Sinistra">Sinistra</option><option value="Destra">Destra</option><option value="Entrambi">Entrambi</option></select></div></div>
                     <div><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Racchetta Utilizzata</label><input type="text" value={editRacchetta} onChange={(e) => setEditRacchetta(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 outline-none" /></div>
                     <div><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Cambia Foto Profilo</label><input type="file" accept="image/*" onChange={(e) => setEditFotoFile(e.target.files?.[0] || null)} className="w-full p-2 bg-gray-50 rounded-xl text-xs border border-gray-200 cursor-pointer" /></div>
-                    <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100"><button onClick={() => setIsEditingProfilo(false)} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-black uppercase text-xs">Annulla</button><button onClick={salvaSchedaTecnica} disabled={salvataggioInCorso} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-black uppercase text-xs shadow-md">{salvataggioInCorso ? 'Salvataggio...' : 'Salva Profilo'}</button></div>
+                    <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100"><button onClick={() => setIsEditingProfilo(false)} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-black uppercase text-xs">Annulla</button><button onClick={salvaSchedaTecnica} disabled={salvataggioInCorso} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-black uppercase text-xs shadow-md disabled:opacity-50">{salvataggioInCorso ? 'Salvataggio...' : 'Salva Profilo'}</button></div>
                   </div>
                 </div>
               ) : (
                 <>
+                  {/* 🎖️ GAMIFICATION: I BADGES */}
+                  {getBadges(profiloAperto).length > 0 && (
+                    <section>
+                      <h3 className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Medagliere</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {getBadges(profiloAperto).map((badge, i) => (
+                          <div key={i} className="bg-white border border-gray-100 px-3 py-2 rounded-xl shadow-sm flex items-center gap-2">
+                            <span className="text-xl">{badge.icon}</span>
+                            <span className="text-[10px] font-black uppercase text-blue-900">{badge.desc}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* ⚔️ TESTA A TESTA (NEMESI) */}
+                  {calcolaTestaATesta(profiloAperto.id.toString()) && (
+                    <section>
+                      <h3 className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">⚔️ Testa a Testa (vs Te)</h3>
+                      <div className="bg-gradient-to-br from-blue-900 to-blue-800 rounded-3xl p-5 shadow-lg flex items-center justify-between border border-blue-700">
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-bold text-blue-300 uppercase mb-1">Hai Vinto</span>
+                          <span className="text-3xl font-black text-green-400 leading-none">{calcolaTestaATesta(profiloAperto.id.toString())?.vinteIo}</span>
+                        </div>
+                        <div className="flex flex-col items-center text-center">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase bg-blue-950 px-2 py-1 rounded-md">Tot: {calcolaTestaATesta(profiloAperto.id.toString())?.giocateContro} Match</span>
+                        </div>
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] font-bold text-blue-300 uppercase mb-1">Ha Vinto</span>
+                          <span className="text-3xl font-black text-red-400 leading-none">{calcolaTestaATesta(profiloAperto.id.toString())?.vinteLui}</span>
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
                   <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center gap-6">
                     <div className="shrink-0"><WinRateDonut vinte={profiloAperto.vinte} giocate={profiloAperto.partite} /></div>
                     <div className="flex-1 grid grid-cols-3 gap-2 w-full text-center">
@@ -572,7 +644,18 @@ export default function Home() {
                         if (partnerPreferiti.length === 0) return <p className="text-sm text-gray-400 font-bold text-center py-4">Nessun dato.</p>;
                         return partnerPreferiti.map((partner, i) => {
                           const partnerWinRate = Math.round((partner.vinteInsieme / partner.insieme) * 100);
-                          return ( <div key={i} className="flex flex-col gap-1"><div className="flex justify-between items-end"><span className="font-black text-blue-900 uppercase text-sm">{partner.nome}</span><span className="text-[10px] font-bold text-gray-500">{partner.insieme} Match</span></div><div className="w-full bg-gray-100 rounded-full h-3 flex items-center relative overflow-hidden"><div className={`h-full transition-all duration-1000 ${partnerWinRate >= 50 ? 'bg-green-500' : 'bg-orange-500'}`} style={{ width: `${partnerWinRate}%` }}></div></div><span className={`text-[10px] font-black mt-0.5 text-right ${partnerWinRate >= 50 ? 'text-green-600' : 'text-orange-600'}`}>{partnerWinRate}% Vinte insieme</span></div> );
+                          return (
+                            <div key={i} className="flex flex-col gap-1">
+                              <div className="flex justify-between items-end">
+                                <span className="font-black text-blue-900 uppercase text-sm">{partner.nome}</span>
+                                <span className="text-[10px] font-bold text-gray-500">{partner.insieme} Match giocati</span>
+                              </div>
+                              <div className="w-full bg-gray-100 rounded-full h-3 flex items-center relative overflow-hidden">
+                                <div className={`h-full transition-all duration-1000 ${partnerWinRate >= 50 ? 'bg-green-500' : 'bg-orange-500'}`} style={{ width: `${partnerWinRate}%` }}></div>
+                              </div>
+                              <span className={`text-[10px] font-black mt-0.5 text-right ${partnerWinRate >= 50 ? 'text-green-600' : 'text-orange-600'}`}>{partnerWinRate}% Vinte insieme</span>
+                            </div>
+                          );
                         });
                       })()}
                     </div>
