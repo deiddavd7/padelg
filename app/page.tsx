@@ -20,7 +20,7 @@ export default function Home() {
   const [mioNome, setMioNome] = useState<string>('')
 
   // ==========================================
-  // 2. STATI REFERTO MATCH
+  // 2. STATI RISULTATO MATCH
   // ==========================================
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
   const [vincitore1Id, setVincitore1Id] = useState('')
@@ -80,7 +80,7 @@ export default function Home() {
   const [nuovoEventoTitolo, setNuovoEventoTitolo] = useState('')
   const [nuovoEventoTipo, setNuovoEventoTipo] = useState('Americana')
   const [nuovoEventoData, setNuovoEventoData] = useState(getOggiStr())
-  const [nuovoEventoMax, setNuovoEventoMax] = useState(8)
+  const [nuovoEventoMax, setNuovoEventoMax] = useState(5)
 
   const [dashboardEvento, setDashboardEvento] = useState<any>(null)
   const [evSqA1, setEvSqA1] = useState('')
@@ -341,15 +341,15 @@ export default function Home() {
 
             {user && giocatori.length > 3 && (
               <div className="mb-10">
-                {!mostraFormPartita ? ( <button onClick={()=>setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 transition-all flex justify-center items-center gap-3"><span className="text-2xl">🎾</span> Inserisci Referto</button> ) : (
+                {!mostraFormPartita ? ( <button onClick={()=>setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 transition-all flex justify-center items-center gap-3"><span className="text-2xl">🎾</span> Inserisci Risultato</button> ) : (
                   <div className="bg-white p-6 sm:p-8 rounded-3xl text-black border border-gray-100 shadow-2xl">
-                    <div className="flex justify-between items-center mb-6"><h3 className="font-black uppercase text-sm text-blue-900 tracking-widest">Referto Passato</h3><button onClick={()=>setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs">ANNULLA</button></div>
+                    <div className="flex justify-between items-center mb-6"><h3 className="font-black uppercase text-sm text-blue-900 tracking-widest">Risultato Passato</h3><button onClick={()=>setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs">ANNULLA</button></div>
                     <div className="space-y-4 mb-6">
                       <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><span className="text-xs font-black uppercase text-blue-800 mb-2 block">🏆 Vincenti</span><div className="flex gap-2"><select value={vincitore1Id} onChange={e=>setVincitore1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 1</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select><select value={vincitore2Id} onChange={e=>setVincitore2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 2</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select></div></div>
                       <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200"><span className="text-xs font-black uppercase text-gray-500 mb-2 block">🥵 Sconfitti</span><div className="flex gap-2"><select value={sconfitto1Id} onChange={e=>setSconfitto1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 1</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select><select value={sconfitto2Id} onChange={e=>setSconfitto2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border"><option value="">Gioc. 2</option>{giocatori.map(g=><option key={g.id} value={g.id}>{g.Nome}</option>)}</select></div></div>
                       <div className="grid grid-cols-2 gap-3"><input type="text" placeholder="Risultato Set" value={risultatoMatch} onChange={e=>setRisultatoMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-bold text-center border border-gray-200 outline-none" /><input type="text" placeholder="Campo" value={campoMatch} onChange={e=>setCampoMatch(e.target.value)} className="p-4 bg-gray-50 rounded-2xl font-bold text-sm border border-gray-200 outline-none" /></div>
                     </div>
-                    <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase shadow-lg disabled:opacity-50">{inviando?'Invio...':'Invia Referto'}</button>
+                    <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase shadow-lg disabled:opacity-50">{inviando?'Invio...':'Invia Risultato'}</button>
                   </div>
                 )}
               </div>
@@ -367,7 +367,7 @@ export default function Home() {
                       <div className="flex justify-between items-center text-sm font-black uppercase tracking-tight"><div className="flex flex-col w-[42%]"><span className="text-yellow-400 text-[10px] mb-1">Vincitori 🏆</span><span className="text-white leading-tight">{p.vincitore}</span></div><div className="w-[16%] text-center"><span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span></div><div className="flex flex-col w-[42%] text-right"><span className="text-white/60 text-[10px] mb-1">Sconfitti</span><span className="text-blue-100 leading-tight">{p.sconfitto}</span></div></div>
                       <div className="bg-blue-900/60 rounded-2xl p-3 border border-blue-800/50 mt-2 text-sm flex justify-between items-center shadow-inner"><span className="text-yellow-400 font-black text-lg">{p.risultato}</span>{p.campo && <span className="text-[10px] text-blue-100 uppercase font-bold bg-blue-800/80 px-2 py-1 rounded-lg border border-blue-700">📍 {p.campo}</span>}</div>
                       {sonoCoinvolto && p.stato === 'In attesa' && ( <div className="flex gap-3 mt-3 pt-4 border-t border-white/10"><button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">✅ Conferma</button><button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">❌ Contesta</button></div> )}
-                      {sonoCoinvolto && p.stato?.includes('Contestato') && ( <div className="mt-3 pt-4 border-t border-white/10"><button onClick={() => eliminaMatch(p.id)} className="w-full bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">🗑️ Elimina Referto</button></div> )}
+                      {sonoCoinvolto && p.stato?.includes('Contestato') && ( <div className="mt-3 pt-4 border-t border-white/10"><button onClick={() => eliminaMatch(p.id)} className="w-full bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">🗑️ Elimina Risultato</button></div> )}
                     </div>
                   )})}
                 </div>
@@ -450,7 +450,7 @@ export default function Home() {
                       <div><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Nome Evento</label><input type="text" value={nuovoEventoTitolo} onChange={e=>setNuovoEventoTitolo(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200" /></div>
                       <div className="flex gap-3">
                         <div className="w-1/2"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Tipo</label><select value={nuovoEventoTipo} onChange={e=>setNuovoEventoTipo(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200"><option value="Americana">Americana</option><option value="Torneo">Torneo</option></select></div>
-                        <div className="w-1/2"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Max Giocatori</label><select value={nuovoEventoMax} onChange={e=>setNuovoEventoMax(Number(e.target.value))} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200"><option value={4}>4</option><option value={8}>8</option><option value={12}>12</option><option value={16}>16</option></select></div>
+                        <div className="w-1/2"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Max Giocatori (min 5)</label><input type="number" min="5" value={nuovoEventoMax} onChange={e=>setNuovoEventoMax(Number(e.target.value))} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200" /></div>
                       </div>
                       <div><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Data</label><input type="date" value={nuovoEventoData} onChange={e=>setNuovoEventoData(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200" /></div>
                     </div>
@@ -701,7 +701,7 @@ export default function Home() {
             </div>
 
             {/* INSERISCI RISULTATO (Solo Creatore) */}
-            {dashboardEvento.creatore_id === mioGiocatoreId && (
+            {(dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-3xl p-5 shadow-inner border border-blue-200">
                 <h3 className="text-xs font-black uppercase text-blue-800 mb-4 text-center">Inserisci Risultato Mini-Match</h3>
                 <div className="flex flex-col gap-4">
