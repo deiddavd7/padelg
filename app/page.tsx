@@ -18,7 +18,6 @@ export default function Home() {
   const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
 
-  // Stati per REGISTRA PARTITA AVANZATA
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
   const [vincitore1Id, setVincitore1Id] = useState('')
   const [vincitore2Id, setVincitore2Id] = useState('')
@@ -30,8 +29,6 @@ export default function Home() {
   const [fotoMatch, setFotoMatch] = useState<File | null>(null)
 
   const [mioGiocatoreId, setMioGiocatoreId] = useState<string | null>(null)
-  
-  // NUOVO: STATO PER IL PROFILO ATLETA
   const [profiloAperto, setProfiloAperto] = useState<any>(null)
 
   useEffect(() => {
@@ -57,7 +54,6 @@ export default function Home() {
   }
 
   const prendiPartite = async () => {
-    // Ho aumentato il limite a 100 per avere statistiche più accurate!
     const { data } = await supabase.from('partite').select('*').order('created_at', { ascending: false }).limit(100)
     if (data) setPartite(data)
   }
@@ -173,26 +169,33 @@ export default function Home() {
     prendiPartite()
   }
 
-  // --- FUNZIONI DI ANALISI STATISTICHE ---
+  // NUOVA FUNZIONE: ELIMINA MATCH CONTESTATO
+  const eliminaMatch = async (matchId: any) => {
+    if (!confirm("Sei sicuro di voler eliminare definitivamente questo referto contestato? L'azione è irreversibile.")) return;
+    const { error } = await supabase.from('partite').delete().eq('id', matchId)
+    if (!error) {
+      prendiPartite();
+    } else {
+      alert("Errore durante l'eliminazione: " + error.message)
+    }
+  }
+
   const calcolaWinRate = (vinte: number, giocate: number) => {
     if (!giocate || giocate === 0) return 0;
     return Math.round((vinte / giocate) * 100);
   }
 
   const calcolaStatisticheAvanzate = (giocatoreId: string) => {
-    // Filtra solo le partite confermate giocate da questo giocatore
     const partiteGiocatore = partite.filter(p => 
       p.stato === 'Confermato' && 
       (p.v1_id === giocatoreId || p.v2_id === giocatoreId || p.s1_id === giocatoreId || p.s2_id === giocatoreId)
     );
 
-    // Trova i partner
     const partnerCount: Record<string, { nome: string, insieme: number, vinteInsieme: number }> = {};
 
     partiteGiocatore.forEach(p => {
       const haVinto = p.v1_id === giocatoreId || p.v2_id === giocatoreId;
       let partnerId = null;
-      
       if (p.v1_id === giocatoreId) partnerId = p.v2_id;
       else if (p.v2_id === giocatoreId) partnerId = p.v1_id;
       else if (p.s1_id === giocatoreId) partnerId = p.s2_id;
@@ -201,9 +204,7 @@ export default function Home() {
       if (partnerId) {
         const partner = giocatori.find(g => g.id.toString() === partnerId);
         if (partner) {
-          if (!partnerCount[partnerId]) {
-            partnerCount[partnerId] = { nome: partner.Nome, insieme: 0, vinteInsieme: 0 };
-          }
+          if (!partnerCount[partnerId]) partnerCount[partnerId] = { nome: partner.Nome, insieme: 0, vinteInsieme: 0 };
           partnerCount[partnerId].insieme += 1;
           if (haVinto) partnerCount[partnerId].vinteInsieme += 1;
         }
@@ -336,11 +337,7 @@ export default function Home() {
           
           <div className="flex flex-col gap-4">
             {giocatori.map((g, index) => (
-              <div 
-                key={g.id} 
-                onClick={() => setProfiloAperto({...g, posizione: index + 1})} // APRE LA MODALE
-                className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50 cursor-pointer"
-              >
+              <div key={g.id} onClick={() => setProfiloAperto({...g, posizione: index + 1})} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50 cursor-pointer">
                 <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg sm:text-xl shadow-inner ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-blue-900 ring-4 ring-yellow-400/40' : index === 1 ? 'bg-gray-200 text-gray-600' : index === 2 ? 'bg-orange-200 text-orange-800' : 'bg-blue-50 text-blue-300'}`}>
                     {index + 1}
@@ -373,7 +370,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* FEED STORICO MATCH - COMPATTATO */}
+        {/* FEED STORICO MATCH */}
         {partite.length > 0 && (
           <div className="mb-10">
              <div className="flex items-center gap-4 mb-6 px-2">
@@ -383,7 +380,10 @@ export default function Home() {
              
              <div className="flex flex-col gap-5">
                {partite.map(p => {
-                 const possoValidare = mioGiocatoreId && (p.s1_id === mioGiocatoreId || p.s2_id === mioGiocatoreId || p.v1_id === mioGiocatoreId || p.v2_id === mioGiocatoreId) && p.stato === 'In attesa';
+                 const sonoCoinvolto = mioGiocatoreId && (p.s1_id === mioGiocatoreId || p.s2_id === mioGiocatoreId || p.v1_id === mioGiocatoreId || p.v2_id === mioGiocatoreId);
+                 const inAttesa = p.stato === 'In attesa';
+                 const contestato = p.stato?.includes('Contestato');
+
                  return (
                  <div key={p.id} className="bg-white/15 backdrop-blur-md border border-white/20 p-5 rounded-3xl shadow-xl flex flex-col gap-3">
                    
@@ -411,10 +411,20 @@ export default function Home() {
                      {p.campo && <span className="text-[10px] text-blue-100 uppercase font-bold bg-blue-800/80 px-2 py-1 rounded-lg border border-blue-700">📍 {p.campo}</span>}
                    </div>
 
-                   {possoValidare && (
+                   {/* BOTTONI VALIDAZIONE (In attesa) */}
+                   {sonoCoinvolto && inAttesa && (
                      <div className="flex gap-3 mt-3 pt-4 border-t border-white/10">
                         <button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">✅ Conferma</button>
-                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 text-white py-3 rounded-xl text-xs font-black uppercase">❌ Contesta</button>
+                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">❌ Contesta</button>
+                     </div>
+                   )}
+
+                   {/* BOTTONE ELIMINAZIONE (Se contestato) */}
+                   {sonoCoinvolto && contestato && (
+                     <div className="mt-3 pt-4 border-t border-white/10">
+                        <button onClick={() => eliminaMatch(p.id)} className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg transition-transform active:scale-95">
+                          🗑️ Elimina Referto Annullato
+                        </button>
                      </div>
                    )}
                  </div>
@@ -424,18 +434,12 @@ export default function Home() {
         )}
       </div>
 
-      {/* ========================================= */}
-      {/* 🚀 MODALE PROFILO GIOCATORE (FULL SCREEN) */}
-      {/* ========================================= */}
+      {/* MODALE PROFILO GIOCATORE (Rimasta invariata) */}
       {profiloAperto && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md overflow-y-auto flex justify-center animate-in fade-in">
           <div className="bg-gray-50 w-full max-w-2xl min-h-screen sm:min-h-[90vh] sm:mt-10 sm:rounded-t-3xl sm:mb-10 flex flex-col relative text-blue-900">
-            
-            {/* Header Profilo */}
             <div className="bg-blue-900 text-white p-6 sm:p-8 sm:rounded-t-3xl relative">
-              <button onClick={() => setProfiloAperto(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md">
-                ✖️
-              </button>
+              <button onClick={() => setProfiloAperto(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md">✖️</button>
               <div className="flex items-center gap-5">
                 {profiloAperto.foto ? (
                   <img src={profiloAperto.foto} className="w-24 h-24 rounded-full border-4 border-yellow-400 object-cover shadow-2xl" />
@@ -453,8 +457,6 @@ export default function Home() {
             </div>
 
             <div className="p-6 space-y-8">
-              
-              {/* Box Statistiche Principali */}
               <section>
                 <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Statistiche Stagionali</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -477,7 +479,6 @@ export default function Home() {
                 </div>
               </section>
 
-              {/* Box Partner Frequenti */}
               <section>
                 <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Top Partner</h3>
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
@@ -498,7 +499,6 @@ export default function Home() {
                 </div>
               </section>
 
-              {/* Storico Partite Personale */}
               <section className="pb-10">
                 <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Storico Match Personale</h3>
                 <div className="space-y-3">
@@ -525,12 +525,10 @@ export default function Home() {
                   })()}
                 </div>
               </section>
-
             </div>
           </div>
         </div>
       )}
-
     </main>
   )
 }
