@@ -29,8 +29,10 @@ export default function Home() {
   const [noteMatch, setNoteMatch] = useState('')
   const [fotoMatch, setFotoMatch] = useState<File | null>(null)
 
-  // Identifica l'ID del giocatore loggato (per sapere se può confermare)
   const [mioGiocatoreId, setMioGiocatoreId] = useState<string | null>(null)
+  
+  // NUOVO: STATO PER IL PROFILO ATLETA
+  const [profiloAperto, setProfiloAperto] = useState<any>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -55,7 +57,8 @@ export default function Home() {
   }
 
   const prendiPartite = async () => {
-    const { data } = await supabase.from('partite').select('*').order('created_at', { ascending: false }).limit(20)
+    // Ho aumentato il limite a 100 per avere statistiche più accurate!
+    const { data } = await supabase.from('partite').select('*').order('created_at', { ascending: false }).limit(100)
     if (data) setPartite(data)
   }
 
@@ -104,7 +107,6 @@ export default function Home() {
     setSalvataggioInCorso(false)
   }
 
-  // FASE DI REGISTRAZIONE (Va in attesa)
   const salvaMatch = async () => {
     if (!vincitore1Id || !vincitore2Id || !sconfitto1Id || !sconfitto2Id || !risultatoMatch.trim()) {
       return alert("Compila tutti i giocatori e il risultato del set!")
@@ -132,36 +134,25 @@ export default function Home() {
       vincitore: nomeVincitori,
       sconfitto: nomeSconfitti,
       risultato: risultatoMatch,
-      v1_id: v1.id.toString(), 
-      v2_id: v2.id.toString(),
-      s1_id: s1.id.toString(), 
-      s2_id: s2.id.toString(),
-      campo: campoMatch,
-      note: noteMatch,
-      foto: urlFotoMatch,
+      v1_id: v1.id.toString(), v2_id: v2.id.toString(),
+      s1_id: s1.id.toString(), s2_id: s2.id.toString(),
+      campo: campoMatch, note: noteMatch, foto: urlFotoMatch,
       stato: 'In attesa'
     }])
 
     if (!error) {
       setVincitore1Id(''); setVincitore2Id(''); setSconfitto1Id(''); setSconfitto2Id('');
       setRisultatoMatch(''); setCampoMatch(''); setNoteMatch(''); setFotoMatch(null);
-      setMostraFormPartita(false);
-      prendiPartite();
+      setMostraFormPartita(false); prendiPartite();
       alert("Referto inviato! In attesa di conferma dagli altri giocatori.")
-    } else {
-      alert("Errore salvataggio: " + error.message)
-    }
+    } else alert("Errore salvataggio: " + error.message)
     setInviando(false)
   }
 
-  // FASE DI CONFERMA E ASSEGNAZIONE PUNTI
   const confermaMatch = async (match: any) => {
     if (!confirm("Confermi questo risultato? I punti verranno assegnati ufficialmente.")) return;
-    
-    // Cambia stato in Confermato
     await supabase.from('partite').update({ stato: 'Confermato' }).eq('id', match.id)
 
-    // Prendi i giocatori aggiornati per calcolare i nuovi punteggi
     const v1 = giocatori.find(g => g.id.toString() === match.v1_id)
     const v2 = giocatori.find(g => g.id.toString() === match.v2_id)
     const s1 = giocatori.find(g => g.id.toString() === match.s1_id)
@@ -172,16 +163,55 @@ export default function Home() {
     if(s1) await supabase.from('giocatori').update({ partite: (s1.partite||0)+1, perse: (s1.perse||0)+1 }).eq('id', s1.id)
     if(s2) await supabase.from('giocatori').update({ partite: (s2.partite||0)+1, perse: (s2.perse||0)+1 }).eq('id', s2.id)
 
-    prendiGiocatori()
-    prendiPartite()
+    prendiGiocatori(); prendiPartite();
   }
 
-  // FASE DI CONTESTAZIONE
   const contestaMatch = async (matchId: any) => {
-    const motivo = prompt("Scrivi il motivo della contestazione (es. 'Risultato errato, era 6-4 non 4-6'):")
+    const motivo = prompt("Scrivi il motivo della contestazione:")
     if (!motivo) return;
     await supabase.from('partite').update({ stato: `Contestato: ${motivo}` }).eq('id', matchId)
     prendiPartite()
+  }
+
+  // --- FUNZIONI DI ANALISI STATISTICHE ---
+  const calcolaWinRate = (vinte: number, giocate: number) => {
+    if (!giocate || giocate === 0) return 0;
+    return Math.round((vinte / giocate) * 100);
+  }
+
+  const calcolaStatisticheAvanzate = (giocatoreId: string) => {
+    // Filtra solo le partite confermate giocate da questo giocatore
+    const partiteGiocatore = partite.filter(p => 
+      p.stato === 'Confermato' && 
+      (p.v1_id === giocatoreId || p.v2_id === giocatoreId || p.s1_id === giocatoreId || p.s2_id === giocatoreId)
+    );
+
+    // Trova i partner
+    const partnerCount: Record<string, { nome: string, insieme: number, vinteInsieme: number }> = {};
+
+    partiteGiocatore.forEach(p => {
+      const haVinto = p.v1_id === giocatoreId || p.v2_id === giocatoreId;
+      let partnerId = null;
+      
+      if (p.v1_id === giocatoreId) partnerId = p.v2_id;
+      else if (p.v2_id === giocatoreId) partnerId = p.v1_id;
+      else if (p.s1_id === giocatoreId) partnerId = p.s2_id;
+      else if (p.s2_id === giocatoreId) partnerId = p.s1_id;
+
+      if (partnerId) {
+        const partner = giocatori.find(g => g.id.toString() === partnerId);
+        if (partner) {
+          if (!partnerCount[partnerId]) {
+            partnerCount[partnerId] = { nome: partner.Nome, insieme: 0, vinteInsieme: 0 };
+          }
+          partnerCount[partnerId].insieme += 1;
+          if (haVinto) partnerCount[partnerId].vinteInsieme += 1;
+        }
+      }
+    });
+
+    const partnerPreferiti = Object.values(partnerCount).sort((a, b) => b.insieme - a.insieme).slice(0, 3);
+    return { partiteGiocatore, partnerPreferiti };
   }
 
   return (
@@ -197,6 +227,7 @@ export default function Home() {
       
       <div className="w-full max-w-lg relative z-10">
         
+        {/* HEADER & LOGIN */}
         <div className="flex justify-end mb-6">
           {user ? (
             <button onClick={() => supabase.auth.signOut()} className="text-[11px] font-bold text-blue-200 hover:text-white transition-colors bg-blue-900/60 px-4 py-2 rounded-full backdrop-blur-sm border border-blue-800/50">
@@ -214,54 +245,52 @@ export default function Home() {
           <p className="text-blue-100 text-sm md:text-base font-bold tracking-widest uppercase mt-2 opacity-90 drop-shadow-md">Official Ranking</p>
         </div>
 
+        {/* BOX LOGIN & REGISTRAZIONE */}
         {mostraLogin && !user && (
-          <div className="bg-white p-8 rounded-3xl text-black mb-10 shadow-2xl animate-in fade-in zoom-in duration-300 border border-gray-100">
-            <h2 className="text-2xl font-black text-blue-900 mb-6 text-center tracking-tight">Accedi o Registrati</h2>
-            <input type="email" placeholder="La tua Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-4 mb-3 bg-gray-50 rounded-2xl font-semibold outline-none focus:ring-2 focus:ring-blue-500 transition-all border border-gray-200" />
-            <input type="password" placeholder="Password (min. 6 caratteri)" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-4 mb-6 bg-gray-50 rounded-2xl font-semibold outline-none focus:ring-2 focus:ring-blue-500 transition-all border border-gray-200" />
+          <div className="bg-white p-8 rounded-3xl text-black mb-10 shadow-2xl">
+            <h2 className="text-2xl font-black text-blue-900 mb-6 text-center">Accedi o Registrati</h2>
+            <input type="email" placeholder="La tua Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-4 mb-3 bg-gray-50 rounded-2xl font-semibold outline-none border border-gray-200" />
+            <input type="password" placeholder="Password (min. 6 caratteri)" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-4 mb-6 bg-gray-50 rounded-2xl font-semibold outline-none border border-gray-200" />
             <div className="flex flex-col gap-3">
-              <button onClick={() => handleAuth('LOGIN')} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-sm shadow-lg hover:bg-blue-700 transition-all active:scale-95">Accedi</button>
-              <button onClick={() => handleAuth('SIGNUP')} className="w-full bg-blue-50 text-blue-700 p-4 rounded-2xl font-black uppercase text-sm hover:bg-blue-100 transition-all active:scale-95">Crea un nuovo account</button>
+              <button onClick={() => handleAuth('LOGIN')} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-sm shadow-lg">Accedi</button>
+              <button onClick={() => handleAuth('SIGNUP')} className="w-full bg-blue-50 text-blue-700 p-4 rounded-2xl font-black uppercase text-sm">Crea un nuovo account</button>
             </div>
           </div>
         )}
 
         {user && !giocatori.some(g => g.user_id === user.id) && (
-          <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-8 rounded-3xl text-blue-900 mb-10 shadow-2xl animate-in slide-in-from-bottom-4">
+          <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-8 rounded-3xl text-blue-900 mb-10 shadow-2xl">
             <h2 className="text-xl font-black uppercase mb-4 text-center tracking-widest">Crea il tuo profilo</h2>
-            <input type="text" placeholder="Nome e Cognome Ufficiale" value={nuovoNome} onChange={e => setNuovoNome(e.target.value)} className="w-full p-4 mb-4 rounded-2xl font-black outline-none shadow-inner text-blue-900 placeholder:text-blue-900/40" />
-            <div className="bg-white/30 p-4 rounded-2xl mb-6 backdrop-blur-sm border border-white/40">
-              <p className="text-xs font-bold uppercase mb-2">Foto Profilo (Consigliata)</p>
-              <input type="file" accept="image/*" onChange={e => setFileFoto(e.target.files?.[0] || null)} className="text-xs w-full font-semibold file:bg-blue-900 file:text-white file:border-none file:px-4 file:py-2 file:rounded-xl file:font-bold file:mr-3 cursor-pointer" />
-            </div>
-            <button onClick={creaProfiloGiocatore} disabled={inviando} className="w-full bg-blue-900 text-white p-4 rounded-2xl font-black uppercase text-sm shadow-xl hover:shadow-2xl transition-all active:scale-95 disabled:opacity-50">
+            <input type="text" placeholder="Nome e Cognome" value={nuovoNome} onChange={e => setNuovoNome(e.target.value)} className="w-full p-4 mb-4 rounded-2xl font-black outline-none shadow-inner" />
+            <button onClick={creaProfiloGiocatore} disabled={inviando} className="w-full bg-blue-900 text-white p-4 rounded-2xl font-black uppercase text-sm shadow-xl hover:shadow-2xl disabled:opacity-50">
               {inviando ? 'Creazione in corso...' : 'Scendi in Campo'}
             </button>
           </div>
         )}
 
+        {/* FORM NUOVO MATCH AVANZATO */}
         {user && giocatori.length > 3 && (
           <div className="mb-10">
             {!mostraFormPartita ? (
-              <button onClick={() => setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition-all flex justify-center items-center gap-3 border-2 border-yellow-300">
+              <button onClick={() => setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition-all flex justify-center items-center gap-3">
                 <span className="text-2xl">🎾</span> Registra Match
               </button>
             ) : (
-              <div className="bg-white p-6 sm:p-8 rounded-3xl text-black border border-gray-100 shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="bg-white p-6 sm:p-8 rounded-3xl text-black border border-gray-100 shadow-2xl">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="font-black uppercase text-sm text-blue-900 tracking-widest">Referto Ufficiale</h3>
-                  <button onClick={() => setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs transition-colors">ANNULLA</button>
+                  <button onClick={() => setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs">ANNULLA</button>
                 </div>
                 
                 <div className="space-y-4 mb-6">
                   <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
                     <span className="text-xs font-black uppercase text-blue-800 mb-2 block">🏆 Squadra Vincente</span>
                     <div className="flex gap-2">
-                      <select value={vincitore1Id} onChange={e => setVincitore1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer">
+                      <select value={vincitore1Id} onChange={e => setVincitore1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-blue-200 text-blue-900 cursor-pointer">
                         <option value="">Gioc. 1</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
-                      <select value={vincitore2Id} onChange={e => setVincitore2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer">
+                      <select value={vincitore2Id} onChange={e => setVincitore2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-blue-200 text-blue-900 cursor-pointer">
                         <option value="">Gioc. 2</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
@@ -271,11 +300,11 @@ export default function Home() {
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
                     <span className="text-xs font-black uppercase text-gray-500 mb-2 block">🥵 Squadra Sconfitta</span>
                     <div className="flex gap-2">
-                      <select value={sconfitto1Id} onChange={e => setSconfitto1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer">
+                      <select value={sconfitto1Id} onChange={e => setSconfitto1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-gray-200 text-gray-600 cursor-pointer">
                         <option value="">Gioc. 1</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
-                      <select value={sconfitto2Id} onChange={e => setSconfitto2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer">
+                      <select value={sconfitto2Id} onChange={e => setSconfitto2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-gray-200 text-gray-600 cursor-pointer">
                         <option value="">Gioc. 2</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
@@ -283,14 +312,14 @@ export default function Home() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <input type="text" placeholder="Risultato Set (es. 6-4, 7-5)" value={risultatoMatch} onChange={e => setRisultatoMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-bold outline-none text-center focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all" />
-                    <input type="text" placeholder="Circolo / Campo" value={campoMatch} onChange={e => setCampoMatch(e.target.value)} className="p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all" />
-                    <input type="file" accept="image/*" onChange={e => setFotoMatch(e.target.files?.[0] || null)} className="p-3 bg-gray-50 rounded-2xl text-[10px] font-semibold file:bg-blue-600 file:text-white file:border-none file:px-3 file:py-1.5 file:rounded-lg file:mr-2 border border-gray-200 transition-all cursor-pointer" title="Foto referto (Opzionale)" />
-                    <textarea placeholder="Note o commenti..." value={noteMatch} onChange={e => setNoteMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-medium text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all min-h-[80px]" />
+                    <input type="text" placeholder="Risultato Set (es. 6-4, 7-5)" value={risultatoMatch} onChange={e => setRisultatoMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-bold outline-none text-center border border-gray-200" />
+                    <input type="text" placeholder="Circolo / Campo" value={campoMatch} onChange={e => setCampoMatch(e.target.value)} className="p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none border border-gray-200" />
+                    <input type="file" accept="image/*" onChange={e => setFotoMatch(e.target.files?.[0] || null)} className="p-3 bg-gray-50 rounded-2xl text-[10px] font-semibold file:bg-blue-600 file:text-white file:border-none file:px-3 file:py-1.5 file:rounded-lg border border-gray-200 cursor-pointer" title="Foto referto" />
+                    <textarea placeholder="Note o commenti..." value={noteMatch} onChange={e => setNoteMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-medium text-sm outline-none border border-gray-200 min-h-[80px]" />
                   </div>
                 </div>
                 
-                <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-black uppercase shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
+                <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase shadow-lg disabled:opacity-50 flex items-center justify-center gap-2">
                   {inviando ? 'Invio in corso...' : 'Invia per Conferma'}
                 </button>
               </div>
@@ -301,13 +330,17 @@ export default function Home() {
         {/* RANKING ATLETI */}
         <div className="mb-12">
           <div className="flex items-center gap-4 mb-6 px-2">
-            <h2 className="text-2xl font-black italic text-yellow-400 tracking-tight drop-shadow-md">Leaderboard</h2>
+            <h2 className="text-2xl font-black italic text-yellow-400">Leaderboard</h2>
             <div className="h-1 flex-1 bg-gradient-to-r from-yellow-400 to-transparent rounded-full opacity-80"></div>
           </div>
           
           <div className="flex flex-col gap-4">
             {giocatori.map((g, index) => (
-              <div key={g.id} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50">
+              <div 
+                key={g.id} 
+                onClick={() => setProfiloAperto({...g, posizione: index + 1})} // APRE LA MODALE
+                className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50 cursor-pointer"
+              >
                 <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg sm:text-xl shadow-inner ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-blue-900 ring-4 ring-yellow-400/40' : index === 1 ? 'bg-gray-200 text-gray-600' : index === 2 ? 'bg-orange-200 text-orange-800' : 'bg-blue-50 text-blue-300'}`}>
                     {index + 1}
@@ -320,30 +353,13 @@ export default function Home() {
                   )}
                   
                   <div className="flex flex-col min-w-0 flex-1">
-                    {editingId === g.id ? (
-                      <div className="flex flex-col gap-2 p-2 bg-blue-50 rounded-2xl border border-blue-100 mr-2">
-                        <input value={editNome} onChange={(e) => setEditNome(e.target.value)} className="p-2 rounded-xl font-bold text-sm uppercase outline-none text-blue-900 border border-blue-200 focus:border-blue-500" placeholder="Nome" />
-                        <input type="file" accept="image/*" onChange={(e) => setEditFotoFile(e.target.files?.[0] || null)} className="text-[10px] text-blue-700 file:bg-blue-600 file:text-white file:border-none file:px-3 file:py-1 file:rounded-lg file:font-bold" />
-                        <div className="flex gap-2 mt-1">
-                          <button onClick={() => salvaModifica(g.id)} className="flex-1 bg-green-500 text-white text-xs py-2 rounded-xl font-black shadow-md">SALVA</button>
-                          <button onClick={() => setEditingId(null)} className="flex-1 bg-gray-200 text-gray-600 text-xs py-2 rounded-xl font-black">ANNULLA</button>
-                        </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 flex-wrap">
+                      <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 break-words tracking-tight">{g.Nome}</span>
+                      <div className="w-full flex gap-3 text-[11px] sm:text-xs font-bold mt-0.5">
+                        <span className="text-blue-400/80">WR: {calcolaWinRate(g.vinte, g.partite)}%</span>
+                        <span className="text-green-500/90">V: {g.vinte || 0}</span>
                       </div>
-                    ) : (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 flex-wrap">
-                        <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 break-words tracking-tight">{g.Nome}</span>
-                        {user && g.user_id === user.id && (
-                          <button onClick={() => { setEditingId(g.id); setEditNome(g.Nome); }} className="text-[9px] bg-yellow-400 text-blue-900 px-3 py-1 rounded-full font-black uppercase shadow-sm hover:scale-105 transition-transform inline-flex items-center gap-1 w-max">
-                            Tu ✏️
-                          </button>
-                        )}
-                        <div className="w-full flex gap-3 text-[11px] sm:text-xs font-bold mt-0.5">
-                          <span className="text-blue-400/80">Match: {g.partite || 0}</span>
-                          <span className="text-green-500/90">Vinte: {g.vinte || 0}</span>
-                          <span className="text-red-400/80">Perse: {g.perse || 0}</span>
-                        </div>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
                 
@@ -357,64 +373,164 @@ export default function Home() {
           </div>
         </div>
 
-        {/* STORICO MATCH AVANZATO */}
+        {/* FEED STORICO MATCH - COMPATTATO */}
         {partite.length > 0 && (
           <div className="mb-10">
              <div className="flex items-center gap-4 mb-6 px-2">
-               <h2 className="text-xl font-black text-blue-100 tracking-tight uppercase drop-shadow-md">Ultime Sfide</h2>
+               <h2 className="text-xl font-black text-blue-100 tracking-tight uppercase">Ultime Sfide</h2>
                <div className="h-px flex-1 bg-white/30"></div>
              </div>
              
              <div className="flex flex-col gap-5">
                {partite.map(p => {
                  const possoValidare = mioGiocatoreId && (p.s1_id === mioGiocatoreId || p.s2_id === mioGiocatoreId || p.v1_id === mioGiocatoreId || p.v2_id === mioGiocatoreId) && p.stato === 'In attesa';
-                 
                  return (
-                 <div key={p.id} className="bg-white/15 backdrop-blur-md border border-white/20 p-5 rounded-3xl shadow-xl flex flex-col gap-3 hover:bg-white/20 transition-colors">
+                 <div key={p.id} className="bg-white/15 backdrop-blur-md border border-white/20 p-5 rounded-3xl shadow-xl flex flex-col gap-3">
                    
                    <div className="flex justify-between items-center mb-2">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-inner ${p.stato === 'Confermato' ? 'bg-green-500 text-white' : p.stato?.includes('Contestato') ? 'bg-red-500 text-white' : 'bg-yellow-400 text-blue-900 animate-pulse'}`}>
                         {p.stato || 'In attesa'}
                       </span>
-                      <span className="text-[10px] text-blue-200 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit' })}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT')}</span>
                    </div>
 
                    <div className="flex justify-between items-center text-sm font-black uppercase tracking-tight">
                      <div className="flex flex-col w-[42%]">
                        <span className="text-yellow-400 text-[10px] mb-1">Vincitori 🏆</span>
-                       <span className="text-white break-words drop-shadow-md leading-tight">{p.vincitore}</span>
+                       <span className="text-white leading-tight">{p.vincitore}</span>
                      </div>
-                     <div className="w-[16%] text-center">
-                       <span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span>
-                     </div>
+                     <div className="w-[16%] text-center"><span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span></div>
                      <div className="flex flex-col w-[42%] text-right">
                        <span className="text-white/60 text-[10px] mb-1">Sconfitti</span>
-                       <span className="text-blue-100 break-words drop-shadow-md leading-tight">{p.sconfitto}</span>
+                       <span className="text-blue-100 leading-tight">{p.sconfitto}</span>
                      </div>
                    </div>
                    
-                   <div className="bg-blue-900/60 rounded-2xl p-4 border border-blue-800/50 mt-2 text-sm flex flex-col gap-3 shadow-inner backdrop-blur-sm">
-                     <div className="flex justify-between items-center text-yellow-400 font-black text-xl">
-                        <span>{p.risultato}</span>
-                        {p.campo && <span className="text-[10px] text-blue-100 uppercase font-bold bg-blue-800/80 px-2 py-1.5 rounded-lg border border-blue-700">📍 {p.campo}</span>}
-                     </div>
-                     {p.note && <p className="text-[12px] text-blue-100/90 italic border-t border-blue-800/50 pt-3 mt-1 leading-relaxed">"{p.note}"</p>}
-                     {p.foto && <img src={p.foto} alt="Foto Referto" className="w-full h-40 object-cover rounded-xl mt-2 border-2 border-white/10 shadow-md" />}
+                   <div className="bg-blue-900/60 rounded-2xl p-3 border border-blue-800/50 mt-2 text-sm flex justify-between items-center shadow-inner">
+                     <span className="text-yellow-400 font-black text-lg">{p.risultato}</span>
+                     {p.campo && <span className="text-[10px] text-blue-100 uppercase font-bold bg-blue-800/80 px-2 py-1 rounded-lg border border-blue-700">📍 {p.campo}</span>}
                    </div>
 
                    {possoValidare && (
                      <div className="flex gap-3 mt-3 pt-4 border-t border-white/10">
-                        <button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg transition-transform active:scale-95">✅ Conferma</button>
-                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg transition-transform active:scale-95">❌ Contesta</button>
+                        <button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">✅ Conferma</button>
+                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 text-white py-3 rounded-xl text-xs font-black uppercase">❌ Contesta</button>
                      </div>
                    )}
-
                  </div>
                )})}
              </div>
           </div>
         )}
       </div>
+
+      {/* ========================================= */}
+      {/* 🚀 MODALE PROFILO GIOCATORE (FULL SCREEN) */}
+      {/* ========================================= */}
+      {profiloAperto && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md overflow-y-auto flex justify-center animate-in fade-in">
+          <div className="bg-gray-50 w-full max-w-2xl min-h-screen sm:min-h-[90vh] sm:mt-10 sm:rounded-t-3xl sm:mb-10 flex flex-col relative text-blue-900">
+            
+            {/* Header Profilo */}
+            <div className="bg-blue-900 text-white p-6 sm:p-8 sm:rounded-t-3xl relative">
+              <button onClick={() => setProfiloAperto(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md">
+                ✖️
+              </button>
+              <div className="flex items-center gap-5">
+                {profiloAperto.foto ? (
+                  <img src={profiloAperto.foto} className="w-24 h-24 rounded-full border-4 border-yellow-400 object-cover shadow-2xl" />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-blue-800 flex items-center justify-center text-3xl font-black border-4 border-yellow-400 shadow-2xl">?</div>
+                )}
+                <div>
+                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none">{profiloAperto.Nome}</h2>
+                  <div className="flex gap-2 mt-2">
+                    <span className="bg-yellow-400 text-blue-900 px-3 py-1 rounded-lg text-xs font-black uppercase shadow-md">#{profiloAperto.posizione} Ranking</span>
+                    <span className="bg-blue-800 border border-blue-700 px-3 py-1 rounded-lg text-xs font-black uppercase shadow-md">{profiloAperto.Punti} Pts</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-8">
+              
+              {/* Box Statistiche Principali */}
+              <section>
+                <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Statistiche Stagionali</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                    <span className="text-3xl font-black text-blue-900">{profiloAperto.partite || 0}</span>
+                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-1">Match Giocati</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                    <span className="text-3xl font-black text-green-500">{profiloAperto.vinte || 0}</span>
+                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-1">Vittorie</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                    <span className="text-3xl font-black text-red-500">{profiloAperto.perse || 0}</span>
+                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-1">Sconfitte</span>
+                  </div>
+                  <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-4 rounded-2xl shadow-md flex flex-col items-center justify-center">
+                    <span className="text-3xl font-black text-blue-900">{calcolaWinRate(profiloAperto.vinte, profiloAperto.partite)}%</span>
+                    <span className="text-[10px] font-bold text-blue-900/80 uppercase mt-1">Win Rate</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Box Partner Frequenti */}
+              <section>
+                <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Top Partner</h3>
+                <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+                  {(() => {
+                    const { partnerPreferiti } = calcolaStatisticheAvanzate(profiloAperto.id.toString());
+                    if (partnerPreferiti.length === 0) return <p className="text-sm text-gray-400 font-bold">Ancora nessun dato sui partner.</p>;
+                    
+                    return partnerPreferiti.map((partner, i) => (
+                      <div key={i} className="flex justify-between items-center py-3 border-b border-gray-50 last:border-0">
+                        <span className="font-black text-blue-900 uppercase text-sm">{partner.nome}</span>
+                        <div className="text-right">
+                          <span className="block text-xs font-bold text-gray-500">{partner.insieme} match insieme</span>
+                          <span className="block text-[10px] font-black text-green-500">{Math.round((partner.vinteInsieme / partner.insieme) * 100)}% Win Rate di coppia</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </section>
+
+              {/* Storico Partite Personale */}
+              <section className="pb-10">
+                <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Storico Match Personale</h3>
+                <div className="space-y-3">
+                  {(() => {
+                    const { partiteGiocatore } = calcolaStatisticheAvanzate(profiloAperto.id.toString());
+                    if (partiteGiocatore.length === 0) return <p className="text-sm text-gray-400 font-bold">Nessun match registrato.</p>;
+                    
+                    return partiteGiocatore.map(p => {
+                      const haVinto = p.v1_id === profiloAperto.id.toString() || p.v2_id === profiloAperto.id.toString();
+                      return (
+                        <div key={p.id} className={`p-4 rounded-2xl border-l-8 ${haVinto ? 'border-l-green-500 bg-green-50' : 'border-l-red-500 bg-red-50'} shadow-sm`}>
+                           <div className="flex justify-between items-center mb-2">
+                             <span className={`text-[10px] font-black uppercase px-2 py-1 rounded ${haVinto ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                               {haVinto ? 'VITTORIA' : 'SCONFITTA'}
+                             </span>
+                             <span className="text-[10px] text-gray-500 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT')}</span>
+                           </div>
+                           <p className="text-xs font-black text-blue-900 mt-2">{p.vincitore} <span className="text-gray-400 mx-1">VS</span> {p.sconfitto}</p>
+                           <p className="text-lg font-black text-gray-800 mt-1">{p.risultato}</p>
+                           {p.campo && <p className="text-[10px] text-gray-500 font-bold mt-1">📍 {p.campo}</p>}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </section>
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   )
 }
