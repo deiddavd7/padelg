@@ -13,11 +13,6 @@ export default function Home() {
   const [inviando, setInviando] = useState(false)
   const [mostraLogin, setMostraLogin] = useState(false)
 
-  const [editingId, setEditingId] = useState<any>(null)
-  const [editNome, setEditNome] = useState('')
-  const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
-  const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
-
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
   const [vincitore1Id, setVincitore1Id] = useState('')
   const [vincitore2Id, setVincitore2Id] = useState('')
@@ -30,6 +25,14 @@ export default function Home() {
 
   const [mioGiocatoreId, setMioGiocatoreId] = useState<string | null>(null)
   const [profiloAperto, setProfiloAperto] = useState<any>(null)
+
+  const [isEditingProfilo, setIsEditingProfilo] = useState(false)
+  const [editNome, setEditNome] = useState('')
+  const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
+  const [editEta, setEditEta] = useState('')
+  const [editLato, setEditLato] = useState('')
+  const [editRacchetta, setEditRacchetta] = useState('')
+  const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -91,23 +94,43 @@ export default function Home() {
     setInviando(false)
   }
 
-  const salvaModifica = async (idRiga: any) => {
+  const apriProfilo = (giocatore: any, index: number) => {
+    setProfiloAperto({...giocatore, posizione: index + 1})
+    setEditNome(giocatore.Nome || '')
+    setEditEta(giocatore.eta ? giocatore.eta.toString() : '')
+    setEditLato(giocatore.lato || '')
+    setEditRacchetta(giocatore.racchetta || '')
+    setIsEditingProfilo(false)
+  }
+
+  const salvaSchedaTecnica = async () => {
+    if (!profiloAperto) return
     setSalvataggioInCorso(true)
-    let updateData: any = { Nome: editNome }
+    let updateData: any = { 
+      Nome: editNome,
+      eta: editEta ? parseInt(editEta) : null,
+      lato: editLato,
+      racchetta: editRacchetta
+    }
     if (editFotoFile) {
       const url = await uploadFotoHelper(editFotoFile)
       if (url) updateData.foto = url
     }
-    await supabase.from('giocatori').update(updateData).eq('id', idRiga)
-    setEditingId(null); setEditFotoFile(null); prendiGiocatori();
+    
+    const { error } = await supabase.from('giocatori').update(updateData).eq('id', profiloAperto.id)
+    if (!error) {
+      await prendiGiocatori()
+      setProfiloAperto((prev: any) => ({...prev, ...updateData, foto: updateData.foto || prev.foto}))
+      setIsEditingProfilo(false)
+      setEditFotoFile(null)
+    } else {
+      alert("Errore salvataggio: " + error.message)
+    }
     setSalvataggioInCorso(false)
   }
 
   const salvaMatch = async () => {
-    if (!vincitore1Id || !vincitore2Id || !sconfitto1Id || !sconfitto2Id || !risultatoMatch.trim()) {
-      return alert("Compila tutti i giocatori e il risultato del set!")
-    }
-    
+    if (!vincitore1Id || !vincitore2Id || !sconfitto1Id || !sconfitto2Id || !risultatoMatch.trim()) return alert("Compila tutti i giocatori e il risultato del set!")
     const giocatoriSelezionati = new Set([vincitore1Id, vincitore2Id, sconfitto1Id, sconfitto2Id])
     if (giocatoriSelezionati.size !== 4) return alert("Hai selezionato lo stesso giocatore più di una volta!")
     
@@ -127,13 +150,9 @@ export default function Home() {
     }
 
     const { error } = await supabase.from('partite').insert([{
-      vincitore: nomeVincitori,
-      sconfitto: nomeSconfitti,
-      risultato: risultatoMatch,
-      v1_id: v1.id.toString(), v2_id: v2.id.toString(),
-      s1_id: s1.id.toString(), s2_id: s2.id.toString(),
-      campo: campoMatch, note: noteMatch, foto: urlFotoMatch,
-      stato: 'In attesa'
+      vincitore: nomeVincitori, sconfitto: nomeSconfitti, risultato: risultatoMatch,
+      v1_id: v1.id.toString(), v2_id: v2.id.toString(), s1_id: s1.id.toString(), s2_id: s2.id.toString(),
+      campo: campoMatch, note: noteMatch, foto: urlFotoMatch, stato: 'In attesa'
     }])
 
     if (!error) {
@@ -169,15 +188,10 @@ export default function Home() {
     prendiPartite()
   }
 
-  // NUOVA FUNZIONE: ELIMINA MATCH CONTESTATO
   const eliminaMatch = async (matchId: any) => {
-    if (!confirm("Sei sicuro di voler eliminare definitivamente questo referto contestato? L'azione è irreversibile.")) return;
+    if (!confirm("Sei sicuro di voler eliminare definitivamente questo referto contestato?")) return;
     const { error } = await supabase.from('partite').delete().eq('id', matchId)
-    if (!error) {
-      prendiPartite();
-    } else {
-      alert("Errore durante l'eliminazione: " + error.message)
-    }
+    if (!error) prendiPartite(); else alert("Errore: " + error.message)
   }
 
   const calcolaWinRate = (vinte: number, giocate: number) => {
@@ -192,7 +206,6 @@ export default function Home() {
     );
 
     const partnerCount: Record<string, { nome: string, insieme: number, vinteInsieme: number }> = {};
-
     partiteGiocatore.forEach(p => {
       const haVinto = p.v1_id === giocatoreId || p.v2_id === giocatoreId;
       let partnerId = null;
@@ -214,6 +227,36 @@ export default function Home() {
     const partnerPreferiti = Object.values(partnerCount).sort((a, b) => b.insieme - a.insieme).slice(0, 3);
     return { partiteGiocatore, partnerPreferiti };
   }
+
+  // COMPONENTE GRAFICO AD ANELLO (DONUT CHART) PER LA WIN RATE
+  const WinRateDonut = ({ vinte, giocate }: { vinte: number, giocate: number }) => {
+    const winRate = calcolaWinRate(vinte, giocate);
+    const radius = 36;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (winRate / 100) * circumference;
+
+    return (
+      <div className="relative flex items-center justify-center">
+        <svg className="transform -rotate-90 w-28 h-28 drop-shadow-md">
+          {/* Sfondo Rosso (Sconfitte) */}
+          <circle cx="56" cy="56" r={radius} stroke="#fee2e2" strokeWidth="12" fill="transparent" />
+          {/* Progresso Verde (Vittorie) */}
+          <circle 
+            cx="56" cy="56" r={radius} 
+            stroke="#22c55e" strokeWidth="12" fill="transparent" 
+            strokeDasharray={circumference} 
+            strokeDashoffset={strokeDashoffset} 
+            className="transition-all duration-1000 ease-out" 
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="absolute flex flex-col items-center justify-center text-center">
+          <span className="text-2xl font-black text-blue-900 leading-none">{winRate}%</span>
+          <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-1">Win Rate</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <main className="min-h-screen bg-[#005bb7] text-white p-4 sm:p-8 font-sans flex flex-col items-center overflow-x-hidden relative">
@@ -259,11 +302,12 @@ export default function Home() {
           </div>
         )}
 
+        {/* CREAZIONE PROFILO */}
         {user && !giocatori.some(g => g.user_id === user.id) && (
           <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-8 rounded-3xl text-blue-900 mb-10 shadow-2xl">
             <h2 className="text-xl font-black uppercase mb-4 text-center tracking-widest">Crea il tuo profilo</h2>
             <input type="text" placeholder="Nome e Cognome" value={nuovoNome} onChange={e => setNuovoNome(e.target.value)} className="w-full p-4 mb-4 rounded-2xl font-black outline-none shadow-inner" />
-            <button onClick={creaProfiloGiocatore} disabled={inviando} className="w-full bg-blue-900 text-white p-4 rounded-2xl font-black uppercase text-sm shadow-xl hover:shadow-2xl disabled:opacity-50">
+            <button onClick={creaProfiloGiocatore} disabled={inviando} className="w-full bg-blue-900 text-white p-4 rounded-2xl font-black uppercase text-sm shadow-xl disabled:opacity-50">
               {inviando ? 'Creazione in corso...' : 'Scendi in Campo'}
             </button>
           </div>
@@ -328,7 +372,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* RANKING ATLETI */}
+        {/* RANKING ATLETI (HOME) */}
         <div className="mb-12">
           <div className="flex items-center gap-4 mb-6 px-2">
             <h2 className="text-2xl font-black italic text-yellow-400">Leaderboard</h2>
@@ -337,7 +381,7 @@ export default function Home() {
           
           <div className="flex flex-col gap-4">
             {giocatori.map((g, index) => (
-              <div key={g.id} onClick={() => setProfiloAperto({...g, posizione: index + 1})} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50 cursor-pointer">
+              <div key={g.id} onClick={() => apriProfilo(g, index)} className="bg-white p-4 sm:p-5 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 flex justify-between items-center group border border-blue-50 cursor-pointer">
                 <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg sm:text-xl shadow-inner ${index === 0 ? 'bg-gradient-to-br from-yellow-300 to-yellow-500 text-blue-900 ring-4 ring-yellow-400/40' : index === 1 ? 'bg-gray-200 text-gray-600' : index === 2 ? 'bg-orange-200 text-orange-800' : 'bg-blue-50 text-blue-300'}`}>
                     {index + 1}
@@ -350,13 +394,23 @@ export default function Home() {
                   )}
                   
                   <div className="flex flex-col min-w-0 flex-1">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 flex-wrap">
-                      <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 break-words tracking-tight">{g.Nome}</span>
-                      <div className="w-full flex gap-3 text-[11px] sm:text-xs font-bold mt-0.5">
-                        <span className="text-blue-400/80">WR: {calcolaWinRate(g.vinte, g.partite)}%</span>
-                        <span className="text-green-500/90">V: {g.vinte || 0}</span>
-                      </div>
+                    <span className="font-extrabold text-base sm:text-xl uppercase text-blue-900 break-words tracking-tight">{g.Nome}</span>
+                    
+                    {/* STATISTICHE AGGIORNATE: Match, Vinte e Perse esplicite */}
+                    <div className="w-full flex gap-3 text-[10px] sm:text-[11px] font-bold mt-0.5">
+                      <span className="text-gray-500">Match: {g.partite || 0}</span>
+                      <span className="text-green-600">V: {g.vinte || 0}</span>
+                      <span className="text-red-500">S: {g.perse || 0}</span>
                     </div>
+
+                    {/* MINI BARRA PROGRESSO NELLA HOME */}
+                    <div className="w-full max-w-[120px] mt-1 flex items-center gap-2">
+                       <div className="w-full bg-red-100 rounded-full h-1.5">
+                         <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${calcolaWinRate(g.vinte, g.partite)}%` }}></div>
+                       </div>
+                       <span className="text-[9px] font-black text-gray-400">{calcolaWinRate(g.vinte, g.partite)}% WR</span>
+                    </div>
+
                   </div>
                 </div>
                 
@@ -386,45 +440,31 @@ export default function Home() {
 
                  return (
                  <div key={p.id} className="bg-white/15 backdrop-blur-md border border-white/20 p-5 rounded-3xl shadow-xl flex flex-col gap-3">
-                   
                    <div className="flex justify-between items-center mb-2">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-inner ${p.stato === 'Confermato' ? 'bg-green-500 text-white' : p.stato?.includes('Contestato') ? 'bg-red-500 text-white' : 'bg-yellow-400 text-blue-900 animate-pulse'}`}>
                         {p.stato || 'In attesa'}
                       </span>
                       <span className="text-[10px] text-blue-200 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT')}</span>
                    </div>
-
                    <div className="flex justify-between items-center text-sm font-black uppercase tracking-tight">
-                     <div className="flex flex-col w-[42%]">
-                       <span className="text-yellow-400 text-[10px] mb-1">Vincitori 🏆</span>
-                       <span className="text-white leading-tight">{p.vincitore}</span>
-                     </div>
+                     <div className="flex flex-col w-[42%]"><span className="text-yellow-400 text-[10px] mb-1">Vincitori 🏆</span><span className="text-white leading-tight">{p.vincitore}</span></div>
                      <div className="w-[16%] text-center"><span className="bg-blue-900/80 text-blue-200 px-2 py-1.5 rounded-xl text-[10px] shadow-inner">VS</span></div>
-                     <div className="flex flex-col w-[42%] text-right">
-                       <span className="text-white/60 text-[10px] mb-1">Sconfitti</span>
-                       <span className="text-blue-100 leading-tight">{p.sconfitto}</span>
-                     </div>
+                     <div className="flex flex-col w-[42%] text-right"><span className="text-white/60 text-[10px] mb-1">Sconfitti</span><span className="text-blue-100 leading-tight">{p.sconfitto}</span></div>
                    </div>
-                   
                    <div className="bg-blue-900/60 rounded-2xl p-3 border border-blue-800/50 mt-2 text-sm flex justify-between items-center shadow-inner">
                      <span className="text-yellow-400 font-black text-lg">{p.risultato}</span>
                      {p.campo && <span className="text-[10px] text-blue-100 uppercase font-bold bg-blue-800/80 px-2 py-1 rounded-lg border border-blue-700">📍 {p.campo}</span>}
                    </div>
 
-                   {/* BOTTONI VALIDAZIONE (In attesa) */}
                    {sonoCoinvolto && inAttesa && (
                      <div className="flex gap-3 mt-3 pt-4 border-t border-white/10">
-                        <button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">✅ Conferma</button>
-                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">❌ Contesta</button>
+                        <button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">✅ Conferma</button>
+                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">❌ Contesta</button>
                      </div>
                    )}
-
-                   {/* BOTTONE ELIMINAZIONE (Se contestato) */}
                    {sonoCoinvolto && contestato && (
                      <div className="mt-3 pt-4 border-t border-white/10">
-                        <button onClick={() => eliminaMatch(p.id)} className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg transition-transform active:scale-95">
-                          🗑️ Elimina Referto Annullato
-                        </button>
+                        <button onClick={() => eliminaMatch(p.id)} className="w-full bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg">🗑️ Elimina Referto Annullato</button>
                      </div>
                    )}
                  </div>
@@ -434,97 +474,178 @@ export default function Home() {
         )}
       </div>
 
-      {/* MODALE PROFILO GIOCATORE (Rimasta invariata) */}
+      {/* ========================================= */}
+      {/* 🚀 MODALE PROFILO GIOCATORE (FULL SCREEN) */}
+      {/* ========================================= */}
       {profiloAperto && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md overflow-y-auto flex justify-center animate-in fade-in">
-          <div className="bg-gray-50 w-full max-w-2xl min-h-screen sm:min-h-[90vh] sm:mt-10 sm:rounded-t-3xl sm:mb-10 flex flex-col relative text-blue-900">
-            <div className="bg-blue-900 text-white p-6 sm:p-8 sm:rounded-t-3xl relative">
-              <button onClick={() => setProfiloAperto(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md">✖️</button>
-              <div className="flex items-center gap-5">
+        <div className="fixed inset-0 z-50 bg-gray-50 overflow-y-auto flex justify-center animate-in fade-in">
+          <div className="w-full max-w-2xl min-h-screen flex flex-col relative text-blue-900">
+            
+            {/* Header Profilo */}
+            <div className="bg-blue-900 text-white p-6 sm:p-8 relative shadow-lg">
+              <button onClick={() => setProfiloAperto(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md z-10 transition-colors">✖️</button>
+              
+              {mioGiocatoreId === profiloAperto.id.toString() && !isEditingProfilo && (
+                <button onClick={() => setIsEditingProfilo(true)} className="absolute top-4 right-16 bg-yellow-400 hover:bg-yellow-300 text-blue-900 px-3 py-1.5 rounded-lg text-xs font-black uppercase shadow-lg transition-colors z-10 flex items-center gap-1">
+                  ✏️ Modifica
+                </button>
+              )}
+
+              <div className="flex items-center gap-5 mt-4">
                 {profiloAperto.foto ? (
-                  <img src={profiloAperto.foto} className="w-24 h-24 rounded-full border-4 border-yellow-400 object-cover shadow-2xl" />
+                  <img src={profiloAperto.foto} className="w-24 h-24 rounded-full border-4 border-yellow-400 object-cover shadow-2xl shrink-0" />
                 ) : (
-                  <div className="w-24 h-24 rounded-full bg-blue-800 flex items-center justify-center text-3xl font-black border-4 border-yellow-400 shadow-2xl">?</div>
+                  <div className="w-24 h-24 rounded-full bg-blue-800 flex items-center justify-center text-3xl font-black border-4 border-yellow-400 shadow-2xl shrink-0">?</div>
                 )}
-                <div>
-                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none">{profiloAperto.Nome}</h2>
-                  <div className="flex gap-2 mt-2">
+                
+                <div className="flex-1">
+                  <h2 className="text-3xl font-black uppercase tracking-tight leading-none break-words">{profiloAperto.Nome}</h2>
+                  <div className="flex flex-wrap gap-2 mt-2">
                     <span className="bg-yellow-400 text-blue-900 px-3 py-1 rounded-lg text-xs font-black uppercase shadow-md">#{profiloAperto.posizione} Ranking</span>
                     <span className="bg-blue-800 border border-blue-700 px-3 py-1 rounded-lg text-xs font-black uppercase shadow-md">{profiloAperto.Punti} Pts</span>
                   </div>
+                  
+                  {!isEditingProfilo && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {profiloAperto.eta && <span className="bg-white/10 border border-white/20 px-2 py-1 rounded text-[10px] font-bold uppercase">🎂 {profiloAperto.eta} Anni</span>}
+                      {profiloAperto.lato && <span className="bg-white/10 border border-white/20 px-2 py-1 rounded text-[10px] font-bold uppercase">🎾 {profiloAperto.lato}</span>}
+                      {profiloAperto.racchetta && <span className="bg-white/10 border border-white/20 px-2 py-1 rounded text-[10px] font-bold uppercase">🏸 {profiloAperto.racchetta}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="p-6 space-y-8">
-              <section>
-                <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Statistiche Stagionali</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
-                    <span className="text-3xl font-black text-blue-900">{profiloAperto.partite || 0}</span>
-                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-1">Match Giocati</span>
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
-                    <span className="text-3xl font-black text-green-500">{profiloAperto.vinte || 0}</span>
-                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-1">Vittorie</span>
-                  </div>
-                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
-                    <span className="text-3xl font-black text-red-500">{profiloAperto.perse || 0}</span>
-                    <span className="text-[10px] font-bold text-gray-500 uppercase mt-1">Sconfitte</span>
-                  </div>
-                  <div className="bg-gradient-to-br from-yellow-300 to-yellow-500 p-4 rounded-2xl shadow-md flex flex-col items-center justify-center">
-                    <span className="text-3xl font-black text-blue-900">{calcolaWinRate(profiloAperto.vinte, profiloAperto.partite)}%</span>
-                    <span className="text-[10px] font-bold text-blue-900/80 uppercase mt-1">Win Rate</span>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Top Partner</h3>
-                <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-                  {(() => {
-                    const { partnerPreferiti } = calcolaStatisticheAvanzate(profiloAperto.id.toString());
-                    if (partnerPreferiti.length === 0) return <p className="text-sm text-gray-400 font-bold">Ancora nessun dato sui partner.</p>;
-                    
-                    return partnerPreferiti.map((partner, i) => (
-                      <div key={i} className="flex justify-between items-center py-3 border-b border-gray-50 last:border-0">
-                        <span className="font-black text-blue-900 uppercase text-sm">{partner.nome}</span>
-                        <div className="text-right">
-                          <span className="block text-xs font-bold text-gray-500">{partner.insieme} match insieme</span>
-                          <span className="block text-[10px] font-black text-green-500">{Math.round((partner.vinteInsieme / partner.insieme) * 100)}% Win Rate di coppia</span>
-                        </div>
+            <div className="p-6 space-y-8 flex-1 -mt-4 rounded-t-3xl bg-gray-50 relative z-20">
+              
+              {isEditingProfilo ? (
+                <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-inner animate-in slide-in-from-top-4">
+                  <h3 className="text-sm font-black uppercase text-blue-900 tracking-widest mb-4">Aggiorna Scheda Tecnica</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Nome Ufficiale</label>
+                      <input type="text" value={editNome} onChange={(e) => setEditNome(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 focus:border-blue-500 outline-none" />
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-1/3">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Età</label>
+                        <input type="number" value={editEta} onChange={(e) => setEditEta(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 focus:border-blue-500 outline-none" />
                       </div>
-                    ));
-                  })()}
+                      <div className="w-2/3">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Lato Preferito</label>
+                        <select value={editLato} onChange={(e) => setEditLato(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 focus:border-blue-500 outline-none text-blue-900 cursor-pointer">
+                          <option value="">Seleziona...</option>
+                          <option value="Sinistra">Sinistra</option>
+                          <option value="Destra">Destra</option>
+                          <option value="Entrambi">Entrambi</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Racchetta Utilizzata</label>
+                      <input type="text" value={editRacchetta} onChange={(e) => setEditRacchetta(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold border border-gray-200 focus:border-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Cambia Foto Profilo</label>
+                      <input type="file" accept="image/*" onChange={(e) => setEditFotoFile(e.target.files?.[0] || null)} className="w-full p-2 bg-gray-50 rounded-xl text-xs border border-gray-200 file:bg-blue-600 file:text-white file:rounded-lg file:border-none file:px-3 file:py-1 cursor-pointer" />
+                    </div>
+                    <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
+                      <button onClick={() => setIsEditingProfilo(false)} className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-black uppercase text-xs">Annulla</button>
+                      <button onClick={salvaSchedaTecnica} disabled={salvataggioInCorso} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-black uppercase text-xs shadow-md disabled:opacity-50">
+                        {salvataggioInCorso ? 'Salvataggio...' : 'Salva Profilo'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </section>
-
-              <section className="pb-10">
-                <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Storico Match Personale</h3>
-                <div className="space-y-3">
-                  {(() => {
-                    const { partiteGiocatore } = calcolaStatisticheAvanzate(profiloAperto.id.toString());
-                    if (partiteGiocatore.length === 0) return <p className="text-sm text-gray-400 font-bold">Nessun match registrato.</p>;
+              ) : (
+                <>
+                  {/* SEZIONE DASHBOARD VISUAL */}
+                  <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center gap-6">
+                    {/* Grafico ad Anello */}
+                    <div className="shrink-0">
+                      <WinRateDonut vinte={profiloAperto.vinte} giocate={profiloAperto.partite} />
+                    </div>
                     
-                    return partiteGiocatore.map(p => {
-                      const haVinto = p.v1_id === profiloAperto.id.toString() || p.v2_id === profiloAperto.id.toString();
-                      return (
-                        <div key={p.id} className={`p-4 rounded-2xl border-l-8 ${haVinto ? 'border-l-green-500 bg-green-50' : 'border-l-red-500 bg-red-50'} shadow-sm`}>
-                           <div className="flex justify-between items-center mb-2">
-                             <span className={`text-[10px] font-black uppercase px-2 py-1 rounded ${haVinto ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                               {haVinto ? 'VITTORIA' : 'SCONFITTA'}
-                             </span>
-                             <span className="text-[10px] text-gray-500 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT')}</span>
-                           </div>
-                           <p className="text-xs font-black text-blue-900 mt-2">{p.vincitore} <span className="text-gray-400 mx-1">VS</span> {p.sconfitto}</p>
-                           <p className="text-lg font-black text-gray-800 mt-1">{p.risultato}</p>
-                           {p.campo && <p className="text-[10px] text-gray-500 font-bold mt-1">📍 {p.campo}</p>}
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </section>
+                    {/* Statistiche numeriche */}
+                    <div className="flex-1 grid grid-cols-3 gap-2 w-full text-center">
+                      <div className="bg-gray-50 p-3 rounded-2xl">
+                        <span className="block text-2xl font-black text-blue-900">{profiloAperto.partite || 0}</span>
+                        <span className="text-[9px] font-bold text-gray-500 uppercase">Match</span>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-2xl">
+                        <span className="block text-2xl font-black text-green-600">{profiloAperto.vinte || 0}</span>
+                        <span className="text-[9px] font-bold text-green-700 uppercase">Vittorie</span>
+                      </div>
+                      <div className="bg-red-50 p-3 rounded-2xl">
+                        <span className="block text-2xl font-black text-red-600">{profiloAperto.perse || 0}</span>
+                        <span className="text-[9px] font-bold text-red-700 uppercase">Sconfitte</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* SEZIONE TOP PARTNER CON BARRE DI PROGRESSO */}
+                  <section>
+                    <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">I Tuoi Top Partner</h3>
+                    <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 flex flex-col gap-4">
+                      {(() => {
+                        const { partnerPreferiti } = calcolaStatisticheAvanzate(profiloAperto.id.toString());
+                        if (partnerPreferiti.length === 0) return <p className="text-sm text-gray-400 font-bold text-center py-4">Gioca qualche partita per vedere le statistiche!</p>;
+                        
+                        return partnerPreferiti.map((partner, i) => {
+                          const partnerWinRate = Math.round((partner.vinteInsieme / partner.insieme) * 100);
+                          return (
+                            <div key={i} className="flex flex-col gap-1">
+                              <div className="flex justify-between items-end">
+                                <span className="font-black text-blue-900 uppercase text-sm">{partner.nome}</span>
+                                <span className="text-[10px] font-bold text-gray-500">{partner.insieme} Match giocati</span>
+                              </div>
+                              <div className="w-full bg-gray-100 rounded-full h-3 flex items-center relative overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all duration-1000 ${partnerWinRate >= 50 ? 'bg-green-500' : 'bg-orange-500'}`} 
+                                  style={{ width: `${partnerWinRate}%` }}
+                                ></div>
+                              </div>
+                              <span className={`text-[10px] font-black mt-0.5 text-right ${partnerWinRate >= 50 ? 'text-green-600' : 'text-orange-600'}`}>
+                                {partnerWinRate}% Vittorie insieme
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </section>
+
+                  {/* STORICO MATCH PERSONALE */}
+                  <section className="pb-10">
+                    <h3 className="text-sm font-black uppercase text-gray-400 tracking-widest mb-3">Storico Match</h3>
+                    <div className="space-y-3">
+                      {(() => {
+                        const { partiteGiocatore } = calcolaStatisticheAvanzate(profiloAperto.id.toString());
+                        if (partiteGiocatore.length === 0) return <p className="text-sm text-gray-400 font-bold">Nessun match registrato.</p>;
+                        
+                        return partiteGiocatore.map(p => {
+                          const haVinto = p.v1_id === profiloAperto.id.toString() || p.v2_id === profiloAperto.id.toString();
+                          return (
+                            <div key={p.id} className={`p-4 rounded-2xl border-l-8 bg-white shadow-sm border ${haVinto ? 'border-l-green-500 border-gray-100' : 'border-l-red-500 border-gray-100'}`}>
+                               <div className="flex justify-between items-center mb-2">
+                                 <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${haVinto ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                   {haVinto ? 'VITTORIA' : 'SCONFITTA'}
+                                 </span>
+                                 <span className="text-[10px] text-gray-400 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT')}</span>
+                               </div>
+                               <p className="text-xs font-black text-blue-900 mt-2">{p.vincitore} <span className="text-gray-300 mx-1">VS</span> {p.sconfitto}</p>
+                               <div className="flex justify-between items-center mt-2">
+                                  <p className="text-lg font-black text-gray-800">{p.risultato}</p>
+                                  {p.campo && <span className="text-[10px] text-gray-500 font-bold bg-gray-100 px-2 py-1 rounded-lg">📍 {p.campo}</span>}
+                               </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </section>
+                </>
+              )}
             </div>
           </div>
         </div>
