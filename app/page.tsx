@@ -89,6 +89,8 @@ export default function Home() {
   const [evSqB2, setEvSqB2] = useState('')
   const [evGameA, setEvGameA] = useState<number | ''>('')
   const [evGameB, setEvGameB] = useState<number | ''>('')
+  // 👇 Nuovo stato per gestire il tabellone a fasi del Torneo
+  const [evFase, setEvFase] = useState('Semifinale')
 
   // ==========================================
   // EFFECTS
@@ -256,7 +258,7 @@ export default function Home() {
   const invitiPendenti = prenotazioni.filter(p=>(p.g2_id===mioGiocatoreId&&p.g2_stato==='In attesa')||(p.g3_id===mioGiocatoreId&&p.g3_stato==='In attesa')||(p.g4_id===mioGiocatoreId&&p.g4_stato==='In attesa'));
 
   // ==========================================
-  // EVENTI E AMERICANE
+  // EVENTI, AMERICANE E TORNEI
   // ==========================================
   const creaEvento = async () => { if (!nuovoEventoTitolo.trim() || !mioGiocatoreId) return alert("Completa!"); setInviando(true); const { error } = await supabase.from('eventi').insert([{ titolo: nuovoEventoTitolo, tipo: nuovoEventoTipo, data_evento: nuovoEventoData, max_iscritti: nuovoEventoMax, creatore_id: mioGiocatoreId, iscritti: [mioGiocatoreId], stato: 'Aperto', partite_evento: [] }]); if (!error) { setMostraFormEvento(false); setNuovoEventoTitolo(''); prendiEventi(); alert("Creato!"); } setInviando(false); }
   const iscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; const is = evento.iscritti || []; if (is.length >= evento.max_iscritti) return alert("Pieno!"); if (is.includes(mioGiocatoreId)) return; await supabase.from('eventi').update({ iscritti: [...is, mioGiocatoreId] }).eq('id', evento.id); prendiEventi(); }
@@ -265,11 +267,17 @@ export default function Home() {
 
   const ricaricaDashboard = async (id: string) => { const { data } = await supabase.from('eventi').select('*').eq('id', id).single(); if (data) setDashboardEvento(data); }
   const avviaEvento = async (evento: any) => { if (!confirm("Chiudere le iscrizioni?")) return; await supabase.from('eventi').update({ stato: 'In Corso' }).eq('id', evento.id); prendiEventi(); }
+  
   const aggiungiPartitaEvento = async () => {
     if (!evSqA1 || !evSqA2 || !evSqB1 || !evSqB2 || evGameA === '' || evGameB === '') return alert("Compila i risultati!");
     if (new Set([evSqA1, evSqA2, evSqB1, evSqB2]).size !== 4) return alert("Giocatore duplicato!");
     setInviando(true);
-    const { error } = await supabase.from('eventi').update({ partite_evento: [...(dashboardEvento.partite_evento || []), { id: Date.now().toString(), sqA: [evSqA1, evSqA2], sqB: [evSqB1, evSqB2], gameA: Number(evGameA), gameB: Number(evGameB) }] }).eq('id', dashboardEvento.id);
+    
+    // 👇 Modifica: Aggiungiamo la "fase" se è un Torneo
+    const faseMatch = dashboardEvento.tipo === 'Torneo' ? evFase : 'Girone';
+    const nuovaPartita = { id: Date.now().toString(), sqA: [evSqA1, evSqA2], sqB: [evSqB1, evSqB2], gameA: Number(evGameA), gameB: Number(evGameB), fase: faseMatch };
+    
+    const { error } = await supabase.from('eventi').update({ partite_evento: [...(dashboardEvento.partite_evento || []), nuovaPartita] }).eq('id', dashboardEvento.id);
     if (!error) { setEvSqA1(''); setEvSqA2(''); setEvSqB1(''); setEvSqB2(''); setEvGameA(''); setEvGameB(''); await ricaricaDashboard(dashboardEvento.id); } else alert(error.message);
     setInviando(false);
   }
@@ -513,7 +521,6 @@ export default function Home() {
             <div className="flex-1 bg-white/10 backdrop-blur-md rounded-3xl p-4 overflow-y-auto flex flex-col gap-3 border border-white/20 shadow-inner">
               {messaggi.length===0?(<div className="m-auto text-center text-blue-200 font-bold text-sm opacity-60">Nessun messaggio.</div>):messaggi.map((msg,i)=>{ const isMine=msg.mittente_id===mioGiocatoreId; return(<div key={msg.id||i} className={`flex flex-col w-3/4 max-w-[280px] ${isMine?'self-end items-end':'self-start items-start'}`}><span className="text-[10px] text-blue-200 font-bold mb-1 mx-1">{isMine?'Tu':msg.mittente_nome}</span><div className={`p-3 rounded-2xl shadow-md ${isMine?'bg-yellow-400 text-blue-900 rounded-tr-sm':'bg-white text-blue-900 rounded-tl-sm'}`}><p className="text-sm font-bold leading-snug">{msg.testo}</p></div><span className="text-[8px] text-blue-200/60 mt-1 mx-1 font-bold">{new Date(msg.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</span></div>)})} <div ref={chatEndRef}/>
             </div>
-            {/* 👇 RISOLTO IL PROBLEMA DEL BORDO CHAT 👇 */}
             <div className="mt-4 mb-24 shrink-0"> 
               {user ? ( <form onSubmit={inviaMessaggioChat} className="flex gap-2"><input type="text" placeholder="Scrivi..." value={nuovoMessaggio} onChange={e=>setNuovoMessaggio(e.target.value)} className="flex-1 p-4 bg-white rounded-2xl text-blue-900 font-bold outline-none shadow-lg focus:border-yellow-400" /><button type="submit" disabled={!nuovoMessaggio.trim()} className="bg-yellow-400 text-blue-900 p-4 rounded-2xl font-black uppercase shadow-lg disabled:opacity-50">Invia</button></form> ) : ( <div className="bg-blue-900/60 p-4 rounded-2xl text-center border border-blue-800/50"><p className="text-xs font-bold text-yellow-400 uppercase">Devi fare l'accesso</p></div> )}
             </div>
@@ -668,43 +675,88 @@ export default function Home() {
       )}
 
       {/* ========================================= */}
-      {/* 🚀 MODALE: DASHBOARD EVENTO (CABINA DI REGIA) */}
+      {/* 🚀 MODALE: DASHBOARD EVENTO E TABELLONE */}
       {/* ========================================= */}
       {dashboardEvento && (
         <div className="fixed inset-0 z-[60] bg-gray-50 overflow-y-auto flex flex-col relative text-blue-900 animate-in slide-in-from-bottom-full">
           <div className="bg-blue-900 text-white p-6 relative shadow-lg shrink-0">
             <button onClick={() => setDashboardEvento(null)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full backdrop-blur-md">✖️</button>
             <h2 className="text-2xl font-black uppercase tracking-tight pr-10">{dashboardEvento.titolo}</h2>
-            <span className="bg-yellow-400 text-blue-900 px-2 py-1 rounded-md text-[10px] font-black uppercase mt-2 inline-block">LIVE TABELLONE</span>
+            <span className="bg-yellow-400 text-blue-900 px-2 py-1 rounded-md text-[10px] font-black uppercase mt-2 inline-block">LIVE TABELLONE ({dashboardEvento.tipo})</span>
           </div>
 
           <div className="p-4 flex-1 flex flex-col gap-6 pb-24">
             
-            {/* CLASSIFICA AMERICANA LIVE */}
-            <div className="bg-white rounded-3xl p-4 shadow-xl border border-gray-200">
-              <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Classifica Live (Game Fatti)</h3>
-              <div className="flex flex-col gap-2">
-                {calcolaClassificaAmericana().map((stat, i) => (
-                  <div key={i} className="flex items-center justify-between bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i===0?'bg-yellow-400 text-blue-900':i===1?'bg-gray-300 text-gray-700':'bg-blue-100 text-blue-800'}`}>{i+1}</div>
-                      <span className="font-bold text-sm uppercase text-blue-900">{stat.nome}</span>
+            {/* 👇 BIVIO: SE AMERICANA MOSTRA LA CLASSIFICA, SE TORNEO MOSTRA I TURNI 👇 */}
+            {dashboardEvento.tipo === 'Americana' ? (
+              <div className="bg-white rounded-3xl p-4 shadow-xl border border-gray-200">
+                <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Classifica Live (Game Fatti)</h3>
+                <div className="flex flex-col gap-2">
+                  {calcolaClassificaAmericana().map((stat, i) => (
+                    <div key={i} className="flex items-center justify-between bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${i===0?'bg-yellow-400 text-blue-900':i===1?'bg-gray-300 text-gray-700':'bg-blue-100 text-blue-800'}`}>{i+1}</div>
+                        <span className="font-bold text-sm uppercase text-blue-900">{stat.nome}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-right">
+                        <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-400 leading-none">Vinte</span><span className="text-xs font-black text-green-600">{stat.vinte}</span></div>
+                        <div className="w-px h-6 bg-gray-200"></div>
+                        <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-400 leading-none">Game</span><span className="text-lg font-black text-blue-600 leading-none">{stat.gameFatti}</span></div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-right">
-                      <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-400 leading-none">Vinte</span><span className="text-xs font-black text-green-600">{stat.vinte}</span></div>
-                      <div className="w-px h-6 bg-gray-200"></div>
-                      <div className="flex flex-col"><span className="text-[10px] font-bold text-gray-400 leading-none">Game</span><span className="text-lg font-black text-blue-600 leading-none">{stat.gameFatti}</span></div>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-white rounded-3xl p-4 shadow-xl border border-gray-200">
+                <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Tabellone Torneo</h3>
+                {['Finale', 'Semifinale', 'Quarti', 'Ottavi'].map(fase => {
+                  const matchFase = (dashboardEvento.partite_evento || []).filter((p:any) => p.fase === fase);
+                  if (matchFase.length === 0) return null;
+                  
+                  return (
+                    <div key={fase} className="mb-4">
+                      <h4 className="text-center font-black text-blue-800 bg-blue-100 rounded-md text-[10px] py-1 mb-2 uppercase">{fase}</h4>
+                      <div className="flex flex-col gap-2">
+                        {matchFase.map((p:any, i:number) => {
+                          const nA1=giocatori.find(g=>g.id.toString()===p.sqA[0])?.Nome; const nA2=giocatori.find(g=>g.id.toString()===p.sqA[1])?.Nome;
+                          const nB1=giocatori.find(g=>g.id.toString()===p.sqB[0])?.Nome; const nB2=giocatori.find(g=>g.id.toString()===p.sqB[1])?.Nome;
+                          const vA = p.gameA > p.gameB; const vB = p.gameB > p.gameA;
+                          return (
+                            <div key={i} className="flex justify-between items-center bg-gray-50 p-3 rounded-2xl text-[10px] font-bold uppercase border border-gray-200">
+                              <div className={`flex flex-col w-[40%] leading-tight ${vA?'text-green-700 font-black':'text-gray-400'}`}><span>{nA1}</span><span>{nA2}</span></div>
+                              <div className="bg-white px-2 py-1 rounded shadow-sm border font-black text-lg w-[20%] text-center"><span className={vA?'text-green-600':'text-gray-500'}>{p.gameA}</span> - <span className={vB?'text-green-600':'text-gray-500'}>{p.gameB}</span></div>
+                              <div className={`flex flex-col w-[40%] text-right leading-tight ${vB?'text-green-700 font-black':'text-gray-400'}`}><span>{nB1}</span><span>{nB2}</span></div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+                {(dashboardEvento.partite_evento?.length === 0) && <p className="text-center text-[10px] font-bold text-gray-400">Nessuna partita registrata.</p>}
+              </div>
+            )}
 
-            {/* INSERISCI RISULTATO (Solo Creatore) */}
+            {/* INSERISCI RISULTATO (Sia Creatore che Iscritti) */}
             {(dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-3xl p-5 shadow-inner border border-blue-200">
-                <h3 className="text-xs font-black uppercase text-blue-800 mb-4 text-center">Inserisci Risultato Mini-Match</h3>
+                <h3 className="text-xs font-black uppercase text-blue-800 mb-4 text-center">Inserisci Risultato Match</h3>
+                
                 <div className="flex flex-col gap-4">
+                  {/* 👇 SELETTORE FASE SOLO PER I TORNEI 👇 */}
+                  {dashboardEvento.tipo === 'Torneo' && (
+                    <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
+                      <span className="text-[10px] font-black uppercase text-blue-500 mb-1 block">Fase del Torneo</span>
+                      <select value={evFase} onChange={e=>setEvFase(e.target.value)} className="w-full p-2 bg-gray-50 rounded-lg text-sm font-black text-blue-900 outline-none border cursor-pointer">
+                        <option value="Ottavi">Ottavi di Finale</option>
+                        <option value="Quarti">Quarti di Finale</option>
+                        <option value="Semifinale">Semifinale</option>
+                        <option value="Finale">Finale</option>
+                      </select>
+                    </div>
+                  )}
+
                   <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
                     <span className="text-[10px] font-black uppercase text-blue-500 mb-2 block">Squadra A</span>
                     <div className="flex gap-2">
@@ -721,15 +773,15 @@ export default function Home() {
                     </div>
                     <input type="number" placeholder="Game Vinti da Sq. B" value={evGameB} onChange={e=>setEvGameB(Number(e.target.value))} className="w-full mt-2 p-3 bg-gray-50 rounded-xl font-black text-center text-orange-900 border border-orange-200" />
                   </div>
-                  <button onClick={aggiungiPartitaEvento} disabled={inviando} className="bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg disabled:opacity-50">{inviando ? 'Salvataggio...' : '➕ Registra Mini-Match'}</button>
+                  <button onClick={aggiungiPartitaEvento} disabled={inviando} className="bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg disabled:opacity-50">{inviando ? 'Salvataggio...' : '➕ Registra Risultato'}</button>
                 </div>
               </div>
             )}
 
-            {/* STORICO MATCH DELL'EVENTO */}
-            {dashboardEvento.partite_evento?.length > 0 && (
+            {/* STORICO MATCH DELL'EVENTO (Solo se è Americana, nel torneo usiamo il tabellone sopra) */}
+            {dashboardEvento.tipo === 'Americana' && dashboardEvento.partite_evento?.length > 0 && (
               <div className="bg-white rounded-3xl p-4 shadow-xl border border-gray-200 mt-2">
-                <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Partite Giocate</h3>
+                <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Tutte le partite giocate</h3>
                 <div className="flex flex-col gap-2">
                   {(dashboardEvento.partite_evento||[]).map((p:any, i:number) => {
                     const nA1=giocatori.find(g=>g.id.toString()===p.sqA[0])?.Nome; const nA2=giocatori.find(g=>g.id.toString()===p.sqA[1])?.Nome;
