@@ -18,12 +18,19 @@ export default function Home() {
   const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
 
+  // Stati per REGISTRA PARTITA AVANZATA
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
   const [vincitore1Id, setVincitore1Id] = useState('')
   const [vincitore2Id, setVincitore2Id] = useState('')
   const [sconfitto1Id, setSconfitto1Id] = useState('')
   const [sconfitto2Id, setSconfitto2Id] = useState('')
   const [risultatoMatch, setRisultatoMatch] = useState('')
+  const [campoMatch, setCampoMatch] = useState('')
+  const [noteMatch, setNoteMatch] = useState('')
+  const [fotoMatch, setFotoMatch] = useState<File | null>(null)
+
+  // Identifica l'ID del giocatore loggato (per sapere se può confermare)
+  const [mioGiocatoreId, setMioGiocatoreId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -33,13 +40,22 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (user && giocatori.length > 0) {
+      const io = giocatori.find(g => g.user_id === user.id)
+      if (io) setMioGiocatoreId(io.id.toString())
+    } else {
+      setMioGiocatoreId(null)
+    }
+  }, [user, giocatori])
+
   const prendiGiocatori = async () => {
     const { data } = await supabase.from('giocatori').select('*').order('Punti', { ascending: false })
     if (data) setGiocatori(data)
   }
 
   const prendiPartite = async () => {
-    const { data } = await supabase.from('partite').select('*').order('created_at', { ascending: false }).limit(10)
+    const { data } = await supabase.from('partite').select('*').order('created_at', { ascending: false }).limit(20)
     if (data) setPartite(data)
   }
 
@@ -51,11 +67,11 @@ export default function Home() {
     else setMostraLogin(false)
   }
 
-  const uploadFotoHelper = async (file: File) => {
-    const nomeFile = `${Date.now()}_${user.id}_foto`
-    const { error: upErr } = await supabase.storage.from('foto_giocatori').upload(nomeFile, file)
+  const uploadFotoHelper = async (file: File, bucket = 'foto_giocatori') => {
+    const nomeFile = `${Date.now()}_${user?.id || 'guest'}_foto`
+    const { error: upErr } = await supabase.storage.from(bucket).upload(nomeFile, file)
     if (!upErr) {
-      const { data: pub } = supabase.storage.from('foto_giocatori').getPublicUrl(nomeFile)
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(nomeFile)
       return pub.publicUrl
     }
     return null
@@ -70,13 +86,7 @@ export default function Home() {
       if (url) urlFoto = url
     }
     const { error } = await supabase.from('giocatori').insert([{ 
-      Nome: nuovoNome, 
-      Punti: 0, 
-      user_id: user.id, 
-      foto: urlFoto, 
-      partite: 0,
-      vinte: 0,
-      perse: 0 
+      Nome: nuovoNome, Punti: 0, user_id: user.id, foto: urlFoto, partite: 0, vinte: 0, perse: 0 
     }])
     if (!error) { setNuovoNome(''); setFileFoto(null); prendiGiocatori(); }
     setInviando(false)
@@ -94,15 +104,14 @@ export default function Home() {
     setSalvataggioInCorso(false)
   }
 
+  // FASE DI REGISTRAZIONE (Va in attesa)
   const salvaMatch = async () => {
     if (!vincitore1Id || !vincitore2Id || !sconfitto1Id || !sconfitto2Id || !risultatoMatch.trim()) {
-      return alert("Compila tutti i campi!")
+      return alert("Compila tutti i giocatori e il risultato del set!")
     }
     
     const giocatoriSelezionati = new Set([vincitore1Id, vincitore2Id, sconfitto1Id, sconfitto2Id])
-    if (giocatoriSelezionati.size !== 4) {
-      return alert("Hai selezionato lo stesso giocatore più di una volta!")
-    }
+    if (giocatoriSelezionati.size !== 4) return alert("Hai selezionato lo stesso giocatore più di una volta!")
     
     setInviando(true)
     const v1 = giocatori.find(g => g.id.toString() === vincitore1Id)
@@ -113,48 +122,66 @@ export default function Home() {
     const nomeVincitori = `${v1.Nome} & ${v2.Nome}`
     const nomeSconfitti = `${s1.Nome} & ${s2.Nome}`
 
+    let urlFotoMatch = ""
+    if (fotoMatch) {
+      const url = await uploadFotoHelper(fotoMatch)
+      if (url) urlFotoMatch = url
+    }
+
     const { error } = await supabase.from('partite').insert([{
       vincitore: nomeVincitori,
       sconfitto: nomeSconfitti,
-      risultato: risultatoMatch
+      risultato: risultatoMatch,
+      v1_id: v1.id.toString(), 
+      v2_id: v2.id.toString(),
+      s1_id: s1.id.toString(), 
+      s2_id: s2.id.toString(),
+      campo: campoMatch,
+      note: noteMatch,
+      foto: urlFotoMatch,
+      stato: 'In attesa'
     }])
 
     if (!error) {
-      // AGGIORNAMENTO STATISTICHE E PUNTI
-      await supabase.from('giocatori').update({ 
-        Punti: v1.Punti + 50, 
-        partite: (v1.partite || 0) + 1, 
-        vinte: (v1.vinte || 0) + 1 
-      }).eq('id', v1.id)
-      
-      await supabase.from('giocatori').update({ 
-        Punti: v2.Punti + 50, 
-        partite: (v2.partite || 0) + 1, 
-        vinte: (v2.vinte || 0) + 1 
-      }).eq('id', v2.id)
-
-      await supabase.from('giocatori').update({ 
-        partite: (s1.partite || 0) + 1, 
-        perse: (s1.perse || 0) + 1 
-      }).eq('id', s1.id)
-      
-      await supabase.from('giocatori').update({ 
-        partite: (s2.partite || 0) + 1, 
-        perse: (s2.perse || 0) + 1 
-      }).eq('id', s2.id)
-      
-      setVincitore1Id('')
-      setVincitore2Id('')
-      setSconfitto1Id('')
-      setSconfitto2Id('')
-      setRisultatoMatch('')
-      setMostraFormPartita(false)
-      prendiGiocatori()
-      prendiPartite()
+      setVincitore1Id(''); setVincitore2Id(''); setSconfitto1Id(''); setSconfitto2Id('');
+      setRisultatoMatch(''); setCampoMatch(''); setNoteMatch(''); setFotoMatch(null);
+      setMostraFormPartita(false);
+      prendiPartite();
+      alert("Referto inviato! In attesa di conferma dagli altri giocatori.")
     } else {
-      alert("Errore salvataggio partita: " + error.message)
+      alert("Errore salvataggio: " + error.message)
     }
     setInviando(false)
+  }
+
+  // FASE DI CONFERMA E ASSEGNAZIONE PUNTI
+  const confermaMatch = async (match: any) => {
+    if (!confirm("Confermi questo risultato? I punti verranno assegnati ufficialmente.")) return;
+    
+    // Cambia stato in Confermato
+    await supabase.from('partite').update({ stato: 'Confermato' }).eq('id', match.id)
+
+    // Prendi i giocatori aggiornati per calcolare i nuovi punteggi
+    const v1 = giocatori.find(g => g.id.toString() === match.v1_id)
+    const v2 = giocatori.find(g => g.id.toString() === match.v2_id)
+    const s1 = giocatori.find(g => g.id.toString() === match.s1_id)
+    const s2 = giocatori.find(g => g.id.toString() === match.s2_id)
+
+    if(v1) await supabase.from('giocatori').update({ Punti: v1.Punti + 50, partite: (v1.partite||0)+1, vinte: (v1.vinte||0)+1 }).eq('id', v1.id)
+    if(v2) await supabase.from('giocatori').update({ Punti: v2.Punti + 50, partite: (v2.partite||0)+1, vinte: (v2.vinte||0)+1 }).eq('id', v2.id)
+    if(s1) await supabase.from('giocatori').update({ partite: (s1.partite||0)+1, perse: (s1.perse||0)+1 }).eq('id', s1.id)
+    if(s2) await supabase.from('giocatori').update({ partite: (s2.partite||0)+1, perse: (s2.perse||0)+1 }).eq('id', s2.id)
+
+    prendiGiocatori()
+    prendiPartite()
+  }
+
+  // FASE DI CONTESTAZIONE
+  const contestaMatch = async (matchId: any) => {
+    const motivo = prompt("Scrivi il motivo della contestazione (es. 'Risultato errato, era 6-4 non 4-6'):")
+    if (!motivo) return;
+    await supabase.from('partite').update({ stato: `Contestato: ${motivo}` }).eq('id', matchId)
+    prendiPartite()
   }
 
   return (
@@ -217,10 +244,10 @@ export default function Home() {
           <div className="mb-10">
             {!mostraFormPartita ? (
               <button onClick={() => setMostraFormPartita(true)} className="w-full bg-yellow-400 text-blue-900 p-5 rounded-3xl font-black uppercase text-sm shadow-xl hover:-translate-y-1 hover:shadow-2xl transition-all flex justify-center items-center gap-3 border-2 border-yellow-300">
-                <span className="text-2xl">🎾</span> Registra Nuovo Match
+                <span className="text-2xl">🎾</span> Registra Match
               </button>
             ) : (
-              <div className="bg-white p-8 rounded-3xl text-black border border-gray-100 shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="bg-white p-6 sm:p-8 rounded-3xl text-black border border-gray-100 shadow-2xl animate-in zoom-in-95 duration-200">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="font-black uppercase text-sm text-blue-900 tracking-widest">Referto Ufficiale</h3>
                   <button onClick={() => setMostraFormPartita(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-500 px-3 py-1 rounded-full font-bold text-xs transition-colors">ANNULLA</button>
@@ -229,13 +256,13 @@ export default function Home() {
                 <div className="space-y-4 mb-6">
                   <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
                     <span className="text-xs font-black uppercase text-blue-800 mb-2 block">🏆 Squadra Vincente</span>
-                    <div className="flex flex-col gap-2">
-                      <select value={vincitore1Id} onChange={e => setVincitore1Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer text-sm">
-                        <option value="">Giocatore 1</option>
+                    <div className="flex gap-2">
+                      <select value={vincitore1Id} onChange={e => setVincitore1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer">
+                        <option value="">Gioc. 1</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
-                      <select value={vincitore2Id} onChange={e => setVincitore2Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer text-sm">
-                        <option value="">Giocatore 2</option>
+                      <select value={vincitore2Id} onChange={e => setVincitore2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-blue-200 focus:border-blue-500 text-blue-900 transition-all appearance-none cursor-pointer">
+                        <option value="">Gioc. 2</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
                     </div>
@@ -243,23 +270,28 @@ export default function Home() {
 
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
                     <span className="text-xs font-black uppercase text-gray-500 mb-2 block">🥵 Squadra Sconfitta</span>
-                    <div className="flex flex-col gap-2">
-                      <select value={sconfitto1Id} onChange={e => setSconfitto1Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer text-sm">
-                        <option value="">Giocatore 1</option>
+                    <div className="flex gap-2">
+                      <select value={sconfitto1Id} onChange={e => setSconfitto1Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer">
+                        <option value="">Gioc. 1</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
-                      <select value={sconfitto2Id} onChange={e => setSconfitto2Id(e.target.value)} className="w-full p-3 bg-white rounded-xl font-bold outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer text-sm">
-                        <option value="">Giocatore 2</option>
+                      <select value={sconfitto2Id} onChange={e => setSconfitto2Id(e.target.value)} className="w-1/2 p-3 bg-white rounded-xl font-bold text-sm outline-none border border-gray-200 focus:border-gray-400 text-gray-600 transition-all appearance-none cursor-pointer">
+                        <option value="">Gioc. 2</option>
                         {giocatori.map(g => <option key={g.id} value={g.id}>{g.Nome}</option>)}
                       </select>
                     </div>
                   </div>
 
-                  <input type="text" placeholder="Risultato (es. 6-4, 6-2)" value={risultatoMatch} onChange={e => setRisultatoMatch(e.target.value)} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-center focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="text" placeholder="Risultato Set (es. 6-4, 7-5)" value={risultatoMatch} onChange={e => setRisultatoMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-bold outline-none text-center focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all" />
+                    <input type="text" placeholder="Circolo / Campo" value={campoMatch} onChange={e => setCampoMatch(e.target.value)} className="p-4 bg-gray-50 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all" />
+                    <input type="file" accept="image/*" onChange={e => setFotoMatch(e.target.files?.[0] || null)} className="p-3 bg-gray-50 rounded-2xl text-[10px] font-semibold file:bg-blue-600 file:text-white file:border-none file:px-3 file:py-1.5 file:rounded-lg file:mr-2 border border-gray-200 transition-all cursor-pointer" title="Foto referto (Opzionale)" />
+                    <textarea placeholder="Note o commenti..." value={noteMatch} onChange={e => setNoteMatch(e.target.value)} className="col-span-2 p-4 bg-gray-50 rounded-2xl font-medium text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-gray-200 transition-all min-h-[80px]" />
+                  </div>
                 </div>
                 
                 <button onClick={salvaMatch} disabled={inviando} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-black uppercase shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
-                  {inviando ? 'Salvataggio in corso...' : 'Conferma Referto'}
+                  {inviando ? 'Invio in corso...' : 'Invia per Conferma'}
                 </button>
               </div>
             )}
@@ -305,8 +337,6 @@ export default function Home() {
                             Tu ✏️
                           </button>
                         )}
-                        
-                        {/* NUOVE STATISTICHE SOTTO IL NOME */}
                         <div className="w-full flex gap-3 text-[11px] sm:text-xs font-bold mt-0.5">
                           <span className="text-blue-400/80">Match: {g.partite || 0}</span>
                           <span className="text-green-500/90">Vinte: {g.vinte || 0}</span>
@@ -327,7 +357,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* STORICO MATCH */}
+        {/* STORICO MATCH AVANZATO */}
         {partite.length > 0 && (
           <div className="mb-10">
              <div className="flex items-center gap-4 mb-6 px-2">
@@ -335,9 +365,20 @@ export default function Home() {
                <div className="h-px flex-1 bg-white/30"></div>
              </div>
              
-             <div className="flex flex-col gap-4">
-               {partite.map(p => (
+             <div className="flex flex-col gap-5">
+               {partite.map(p => {
+                 const possoValidare = mioGiocatoreId && (p.s1_id === mioGiocatoreId || p.s2_id === mioGiocatoreId || p.v1_id === mioGiocatoreId || p.v2_id === mioGiocatoreId) && p.stato === 'In attesa';
+                 
+                 return (
                  <div key={p.id} className="bg-white/15 backdrop-blur-md border border-white/20 p-5 rounded-3xl shadow-xl flex flex-col gap-3 hover:bg-white/20 transition-colors">
+                   
+                   <div className="flex justify-between items-center mb-2">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-inner ${p.stato === 'Confermato' ? 'bg-green-500 text-white' : p.stato?.includes('Contestato') ? 'bg-red-500 text-white' : 'bg-yellow-400 text-blue-900 animate-pulse'}`}>
+                        {p.stato || 'In attesa'}
+                      </span>
+                      <span className="text-[10px] text-blue-200 font-bold">{new Date(p.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit' })}</span>
+                   </div>
+
                    <div className="flex justify-between items-center text-sm font-black uppercase tracking-tight">
                      <div className="flex flex-col w-[42%]">
                        <span className="text-yellow-400 text-[10px] mb-1">Vincitori 🏆</span>
@@ -351,15 +392,28 @@ export default function Home() {
                        <span className="text-blue-100 break-words drop-shadow-md leading-tight">{p.sconfitto}</span>
                      </div>
                    </div>
-                   <div className="mt-2 text-center bg-blue-900/60 rounded-2xl py-2 font-black text-base text-yellow-400 border border-blue-800/50 shadow-inner backdrop-blur-sm">
-                     {p.risultato}
+                   
+                   <div className="bg-blue-900/60 rounded-2xl p-4 border border-blue-800/50 mt-2 text-sm flex flex-col gap-3 shadow-inner backdrop-blur-sm">
+                     <div className="flex justify-between items-center text-yellow-400 font-black text-xl">
+                        <span>{p.risultato}</span>
+                        {p.campo && <span className="text-[10px] text-blue-100 uppercase font-bold bg-blue-800/80 px-2 py-1.5 rounded-lg border border-blue-700">📍 {p.campo}</span>}
+                     </div>
+                     {p.note && <p className="text-[12px] text-blue-100/90 italic border-t border-blue-800/50 pt-3 mt-1 leading-relaxed">"{p.note}"</p>}
+                     {p.foto && <img src={p.foto} alt="Foto Referto" className="w-full h-40 object-cover rounded-xl mt-2 border-2 border-white/10 shadow-md" />}
                    </div>
+
+                   {possoValidare && (
+                     <div className="flex gap-3 mt-3 pt-4 border-t border-white/10">
+                        <button onClick={() => confermaMatch(p)} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg transition-transform active:scale-95">✅ Conferma</button>
+                        <button onClick={() => contestaMatch(p.id)} className="flex-1 bg-red-500/90 hover:bg-red-600 text-white py-3 rounded-xl text-xs font-black uppercase shadow-lg transition-transform active:scale-95">❌ Contesta</button>
+                     </div>
+                   )}
+
                  </div>
-               ))}
+               )})}
              </div>
           </div>
         )}
-
       </div>
     </main>
   )
