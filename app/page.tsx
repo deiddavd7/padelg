@@ -81,16 +81,7 @@ export default function Home() {
   const [nuovoEventoTipo, setNuovoEventoTipo] = useState('Americana')
   const [nuovoEventoData, setNuovoEventoData] = useState(getOggiStr())
   const [nuovoEventoMax, setNuovoEventoMax] = useState(5)
-
   const [dashboardEvento, setDashboardEvento] = useState<any>(null)
-  
-  const [evSqA1, setEvSqA1] = useState('')
-  const [evSqA2, setEvSqA2] = useState('')
-  const [evSqB1, setEvSqB1] = useState('')
-  const [evSqB2, setEvSqB2] = useState('')
-  const [evGameA, setEvGameA] = useState<number | ''>('')
-  const [evGameB, setEvGameB] = useState<number | ''>('')
-  const [evFase, setEvFase] = useState('Semifinale')
 
   // ==========================================
   // EFFECTS
@@ -256,61 +247,149 @@ export default function Home() {
   const invitiPendenti = prenotazioni.filter(p=>(p.g2_id===mioGiocatoreId&&p.g2_stato==='In attesa')||(p.g3_id===mioGiocatoreId&&p.g3_stato==='In attesa')||(p.g4_id===mioGiocatoreId&&p.g4_stato==='In attesa'));
 
   // ==========================================
-  // EVENTI E AMERICANE
+  // EVENTI, AMERICANE E TORNEI
   // ==========================================
   const creaEvento = async () => { if (!nuovoEventoTitolo.trim() || !mioGiocatoreId) return alert("Completa!"); setInviando(true); const { error } = await supabase.from('eventi').insert([{ titolo: nuovoEventoTitolo, tipo: nuovoEventoTipo, data_evento: nuovoEventoData, max_iscritti: nuovoEventoMax, creatore_id: mioGiocatoreId, iscritti: [mioGiocatoreId], stato: 'Aperto', partite_evento: [] }]); if (!error) { setMostraFormEvento(false); setNuovoEventoTitolo(''); prendiEventi(); alert("Creato!"); } setInviando(false); }
   const iscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; const is = evento.iscritti || []; if (is.length >= evento.max_iscritti) return alert("Pieno!"); if (is.includes(mioGiocatoreId)) return; await supabase.from('eventi').update({ iscritti: [...is, mioGiocatoreId] }).eq('id', evento.id); prendiEventi(); }
   const disiscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; await supabase.from('eventi').update({ iscritti: (evento.iscritti || []).filter((id:string)=>id!==mioGiocatoreId) }).eq('id', evento.id); prendiEventi(); }
   const eliminaEvento = async (eventoId: string) => { if (!confirm("Annullare?")) return; await supabase.from('eventi').delete().eq('id', eventoId); prendiEventi(); }
 
-  // 🚀 LOGICA AVVIO EVENTO E GENERAZIONE CALENDARIO AMERICANA
   const ricaricaDashboard = async (id: string) => { const { data } = await supabase.from('eventi').select('*').eq('id', id).single(); if (data) setDashboardEvento(data); }
   
+  // 🚀 LOGICA AVVIO EVENTO (Algoritmi Americana & Torneo)
   const avviaEvento = async (evento: any) => { 
     if (!confirm("Vuoi chiudere le iscrizioni e avviare l'evento?")) return; 
     let payload: any = { stato: 'In Corso' };
+    const iscritti = evento.iscritti || [];
 
     if (evento.tipo === 'Americana') {
-      const iscritti = evento.iscritti || [];
       if (iscritti.length < 4) return alert("Servono almeno 4 giocatori!");
       const turni = iscritti.length >= 8 ? 6 : iscritti.length; 
       const matchGenerati: any[] = [];
       let playerStats = iscritti.map((id:string) => ({ id, played: 0 }));
+      let history: Record<string, Record<string, number>> = {};
+      iscritti.forEach((i:string) => { history[i] = {}; iscritti.forEach((j:string) => history[i][j] = 0); });
 
       for (let t = 1; t <= turni; t++) {
         playerStats.sort((a, b) => a.played - b.played || Math.random() - 0.5);
         const numCampi = Math.floor(iscritti.length / 4);
         for (let c = 0; c < numCampi; c++) {
-          const p1 = playerStats[c * 4]; const p2 = playerStats[c * 4 + 1]; const p3 = playerStats[c * 4 + 2]; const p4 = playerStats[c * 4 + 3];
-          p1.played++; p2.played++; p3.played++; p4.played++;
-          matchGenerati.push({ id: `t${t}-c${c}-${Date.now()}`, fase: `Turno ${t} - Campo ${c+1}`, sqA: [p1.id, p2.id], sqB: [p3.id, p4.id], gameA: '', gameB: '' });
+          let p = [playerStats[c*4].id, playerStats[c*4+1].id, playerStats[c*4+2].id, playerStats[c*4+3].id];
+          let combos = [
+            { a: [p[0], p[1]], b: [p[2], p[3]], score: history[p[0]][p[1]] + history[p[2]][p[3]] },
+            { a: [p[0], p[2]], b: [p[1], p[3]], score: history[p[0]][p[2]] + history[p[1]][p[3]] },
+            { a: [p[0], p[3]], b: [p[1], p[2]], score: history[p[0]][p[3]] + history[p[1]][p[2]] }
+          ];
+          combos.sort((x,y) => x.score - y.score);
+          let best = combos[0];
+          history[best.a[0]][best.a[1]]++; history[best.a[1]][best.a[0]]++;
+          history[best.b[0]][best.b[1]]++; history[best.b[1]][best.b[0]]++;
+          
+          playerStats[c*4].played++; playerStats[c*4+1].played++; playerStats[c*4+2].played++; playerStats[c*4+3].played++;
+          matchGenerati.push({ id: `t${t}-c${c}-${Date.now()}`, fase: `Turno ${t} - Campo ${c+1}`, sqA: best.a, sqB: best.b, gameA: '', gameB: '' });
         }
       }
       payload.partite_evento = matchGenerati;
+    } 
+    else if (evento.tipo === 'Torneo') {
+      const n = iscritti.length;
+      if (![4, 8, 16].includes(n)) return alert("Il Torneo richiede esattamente 4, 8 o 16 giocatori (multipli per formare le coppie)!");
+      
+      let seeded = [...iscritti].sort((a,b) => {
+         const pA = giocatori.find(g=>g.id.toString()===a)?.Punti || 0;
+         const pB = giocatori.find(g=>g.id.toString()===b)?.Punti || 0;
+         return pB - pA; // Più forti per primi
+      });
+      let coppie = [];
+      for(let i=0; i<n/2; i++) coppie.push([seeded[i], seeded[n-1-i]]); // Il più forte col più debole
+
+      let matchGenerati = [];
+      if (n === 4) {
+         matchGenerati.push({ id: 'F1', fase: 'Finale', sqA: coppie[0], sqB: coppie[1], gameA: '', gameB: '', nextMatch: null });
+      } else if (n === 8) {
+         matchGenerati.push({ id: 'S1', fase: 'Semifinale', sqA: coppie[0], sqB: coppie[3], gameA: '', gameB: '', nextMatch: 'F1', nextSlot: 'sqA' });
+         matchGenerati.push({ id: 'S2', fase: 'Semifinale', sqA: coppie[1], sqB: coppie[2], gameA: '', gameB: '', nextMatch: 'F1', nextSlot: 'sqB' });
+         matchGenerati.push({ id: 'F1', fase: 'Finale', sqA: [], sqB: [], gameA: '', gameB: '', nextMatch: null });
+      } else if (n === 16) {
+         matchGenerati.push({ id: 'Q1', fase: 'Quarti', sqA: coppie[0], sqB: coppie[7], gameA: '', gameB: '', nextMatch: 'S1', nextSlot: 'sqA' });
+         matchGenerati.push({ id: 'Q2', fase: 'Quarti', sqA: coppie[3], sqB: coppie[4], gameA: '', gameB: '', nextMatch: 'S1', nextSlot: 'sqB' });
+         matchGenerati.push({ id: 'Q3', fase: 'Quarti', sqA: coppie[1], sqB: coppie[6], gameA: '', gameB: '', nextMatch: 'S2', nextSlot: 'sqA' });
+         matchGenerati.push({ id: 'Q4', fase: 'Quarti', sqA: coppie[2], sqB: coppie[5], gameA: '', gameB: '', nextMatch: 'S2', nextSlot: 'sqB' });
+         matchGenerati.push({ id: 'S1', fase: 'Semifinale', sqA: [], sqB: [], gameA: '', gameB: '', nextMatch: 'F1', nextSlot: 'sqA' });
+         matchGenerati.push({ id: 'S2', fase: 'Semifinale', sqA: [], sqB: [], gameA: '', gameB: '', nextMatch: 'F1', nextSlot: 'sqB' });
+         matchGenerati.push({ id: 'F1', fase: 'Finale', sqA: [], sqB: [], gameA: '', gameB: '', nextMatch: null });
+      }
+      payload.partite_evento = matchGenerati;
     }
+
     await supabase.from('eventi').update(payload).eq('id', evento.id); 
     prendiEventi(); 
   }
 
-  // Aggiunta Manuale per Tornei
-  const aggiungiPartitaEvento = async () => {
-    if (!evSqA1 || !evSqA2 || !evSqB1 || !evSqB2 || evGameA === '' || evGameB === '') return alert("Compila i risultati!");
-    if (new Set([evSqA1, evSqA2, evSqB1, evSqB2]).size !== 4) return alert("Giocatore duplicato!");
+  // 🚀 CHIUSURA EVENTO (Assegnazione Elo Ufficiale)
+  const chiudiEvento = async () => {
+    if (!confirm("Sei sicuro? Questo chiuderà l'evento e distribuirà i Punti Ranking Ufficiali a tutti i partecipanti in base ai risultati!")) return;
     setInviando(true);
-    const faseMatch = dashboardEvento.tipo === 'Torneo' ? evFase : 'Girone';
-    const nuovaPartita = { id: Date.now().toString(), sqA: [evSqA1, evSqA2], sqB: [evSqB1, evSqB2], gameA: Number(evGameA), gameB: Number(evGameB), fase: faseMatch };
-    const { error } = await supabase.from('eventi').update({ partite_evento: [...(dashboardEvento.partite_evento || []), nuovaPartita] }).eq('id', dashboardEvento.id);
-    if (!error) { setEvSqA1(''); setEvSqA2(''); setEvSqB1(''); setEvSqB2(''); setEvGameA(''); setEvGameB(''); await ricaricaDashboard(dashboardEvento.id); } else alert(error.message);
+    let deltaPunti: Record<string, number> = {};
+    
+    (dashboardEvento.partite_evento || []).forEach((p: any) => {
+      if (p.gameA !== '' && p.gameB !== '' && p.gameA !== p.gameB && p.sqA.length === 2 && p.sqB.length === 2) {
+        const vA = p.gameA > p.gameB;
+        const v1 = giocatori.find(g=>g.id.toString()===(vA ? p.sqA[0] : p.sqB[0]));
+        const v2 = giocatori.find(g=>g.id.toString()===(vA ? p.sqA[1] : p.sqB[1]));
+        const s1 = giocatori.find(g=>g.id.toString()===(vA ? p.sqB[0] : p.sqA[0]));
+        const s2 = giocatori.find(g=>g.id.toString()===(vA ? p.sqB[1] : p.sqA[1]));
+        
+        const rv=((v1?.Punti||0)+(v2?.Punti||0))/2; const rs=((s1?.Punti||0)+(s2?.Punti||0))/2; const diff=rs-rv; const pV=1/(1+Math.pow(10,diff/400)); 
+        let pG=Math.max(5,Math.round(30*(1-pV))); // Metà dei punti normali per i tornei
+        let pP=Math.round(pG/2);
+        
+        if (v1) deltaPunti[v1.id] = (deltaPunti[v1.id] || 0) + pG;
+        if (v2) deltaPunti[v2.id] = (deltaPunti[v2.id] || 0) + pG;
+        if (s1) deltaPunti[s1.id] = (deltaPunti[s1.id] || 0) - pP;
+        if (s2) deltaPunti[s2.id] = (deltaPunti[s2.id] || 0) - pP;
+      }
+    });
+
+    const updates = Object.keys(deltaPunti).map(async (gid) => {
+      const dbG = giocatori.find(g => g.id.toString() === gid);
+      if (dbG) {
+        return supabase.from('giocatori').update({ Punti: Math.max(0, (dbG.Punti || 0) + deltaPunti[gid]), partite: (dbG.partite||0)+1 }).eq('id', dbG.id);
+      }
+    });
+
+    await Promise.all(updates);
+    await supabase.from('eventi').update({ stato: 'Chiuso' }).eq('id', dashboardEvento.id);
+    
+    prendiGiocatori();
+    prendiEventi();
+    setDashboardEvento(null);
     setInviando(false);
+    alert("Evento chiuso con successo! Punti Ranking assegnati ufficialmente.");
   }
 
-  // Salvataggio Risultato Collaborativo
-  const salvaRisultatoAmericana = async (matchId: string) => {
+  // 🚀 SALVATAGGIO COLLABORATIVO RISULTATI (Valido sia per Americana che Torneo Auto-Avanzante)
+  const salvaRisultatoGenerico = async (matchId: string) => {
     const valA = (document.getElementById(`gA-${matchId}`) as HTMLInputElement)?.value;
     const valB = (document.getElementById(`gB-${matchId}`) as HTMLInputElement)?.value;
     if (valA === '' || valB === '') return alert('Inserisci entrambi i punteggi!');
+    if (dashboardEvento.tipo === 'Torneo' && valA === valB) return alert('Nei tornei non ci possono essere pareggi!');
+    
     setInviando(true);
-    const nuovePartite = dashboardEvento.partite_evento.map((p:any) => { if (p.id === matchId) return { ...p, gameA: Number(valA), gameB: Number(valB) }; return p; });
+    const matchCorrente = dashboardEvento.partite_evento.find((p:any) => p.id === matchId);
+    const isVittoriaA = Number(valA) > Number(valB);
+    const vincenti = isVittoriaA ? matchCorrente.sqA : matchCorrente.sqB;
+
+    const nuovePartite = dashboardEvento.partite_evento.map((p:any) => { 
+      // Salva il punteggio in questo match
+      if (p.id === matchId) return { ...p, gameA: Number(valA), gameB: Number(valB) }; 
+      // Se è un torneo, spingi automaticamente il vincitore nel turno successivo
+      if (dashboardEvento.tipo === 'Torneo' && p.id === matchCorrente.nextMatch) {
+         return { ...p, [matchCorrente.nextSlot]: vincenti };
+      }
+      return p; 
+    });
+
     const { error } = await supabase.from('eventi').update({ partite_evento: nuovePartite }).eq('id', dashboardEvento.id);
     if (!error) { await ricaricaDashboard(dashboardEvento.id); } else alert(error.message);
     setInviando(false);
@@ -490,7 +569,7 @@ export default function Home() {
                     <div className="space-y-4 mb-6">
                       <div><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Nome Evento</label><input type="text" value={nuovoEventoTitolo} onChange={e=>setNuovoEventoTitolo(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200" /></div>
                       <div className="flex gap-3">
-                        <div className="w-1/2"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Tipo</label><select value={nuovoEventoTipo} onChange={e=>setNuovoEventoTipo(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200"><option value="Americana">Americana</option><option value="Torneo">Torneo</option></select></div>
+                        <div className="w-1/2"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Tipo</label><select value={nuovoEventoTipo} onChange={e=>setNuovoEventoTipo(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200"><option value="Americana">Americana</option><option value="Torneo">Torneo (Auto)</option></select></div>
                         <div className="w-1/2"><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Max Giocatori (min 5)</label><input type="number" min="5" value={nuovoEventoMax} onChange={e=>setNuovoEventoMax(Number(e.target.value))} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200" /></div>
                       </div>
                       <div><label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Data</label><input type="date" value={nuovoEventoData} onChange={e=>setNuovoEventoData(e.target.value)} className="w-full p-3 bg-gray-50 rounded-xl font-bold outline-none border border-gray-200" /></div>
@@ -508,7 +587,7 @@ export default function Home() {
                   <div key={ev.id} className={`bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col relative border-2 ${ev.stato==='In Corso' ? 'border-yellow-400' : 'border-gray-100'}`}>
                     <div className="absolute top-4 right-4 flex gap-2">
                       {eMio && ev.stato === 'Aperto' && <button onClick={() => eliminaEvento(ev.id)} className="bg-red-500/90 hover:bg-red-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-md">✖</button>}
-                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-md ${ev.stato === 'In Corso' ? 'bg-yellow-400 text-blue-900 animate-pulse' : 'bg-blue-900/90 text-yellow-400'}`}>{ev.stato === 'Aperto' ? ev.tipo : ev.stato}</span>
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-md ${ev.stato === 'In Corso' ? 'bg-yellow-400 text-blue-900 animate-pulse' : ev.stato === 'Chiuso' ? 'bg-gray-200 text-gray-500' : 'bg-blue-900/90 text-yellow-400'}`}>{ev.stato === 'Aperto' ? ev.tipo : ev.stato}</span>
                     </div>
                     <div className="p-6 pb-4">
                       <span className="text-[10px] font-black uppercase text-gray-400">{ev.data_evento.split('-').reverse().join('/')}</span>
@@ -532,15 +611,16 @@ export default function Home() {
                       {ev.stato === 'Aperto' && (
                         <>
                           {!user ? <button disabled className="w-full bg-gray-300 text-white py-3 rounded-xl text-xs font-black uppercase">Fai Log in</button> : isIscritto ? <button onClick={()=>disiscrivitiEvento(ev)} className="w-full bg-red-100 text-red-600 py-3 rounded-xl text-xs font-black uppercase">Ritirati</button> : isPieno ? <button disabled className="w-full bg-gray-300 text-white py-3 rounded-xl text-xs font-black uppercase">Posti Esauriti</button> : <button onClick={()=>iscrivitiEvento(ev)} className="w-full bg-green-500 text-white py-3 rounded-xl text-xs font-black uppercase shadow-md">✅ Iscriviti</button>}
-                          {eMio && <button onClick={()=>avviaEvento(ev)} className="w-full mt-2 border-2 border-yellow-400 text-yellow-600 hover:bg-yellow-50 py-3 rounded-xl text-xs font-black uppercase">🚀 Avvia Evento</button>}
+                          {eMio && <button onClick={()=>avviaEvento(ev)} className="w-full mt-2 border-2 border-yellow-400 text-yellow-600 hover:bg-yellow-50 py-3 rounded-xl text-xs font-black uppercase">🚀 Avvia Evento / Crea Tabellone</button>}
                         </>
                       )}
-                      {ev.stato === 'In Corso' && ( <button onClick={()=>ricaricaDashboard(ev.id)} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-xs font-black uppercase shadow-md flex justify-center items-center gap-2">🎾 Apri Tabellone & Risultati</button> )}
+                      {(ev.stato === 'In Corso' || ev.stato === 'Chiuso') && ( <button onClick={()=>ricaricaDashboard(ev.id)} className={`w-full ${ev.stato==='Chiuso'?'bg-gray-800':'bg-blue-600 hover:bg-blue-700'} text-white py-3 rounded-xl text-xs font-black uppercase shadow-md flex justify-center items-center gap-2`}>🎾 Apri Tabellone & Risultati</button> )}
                     </div>
                   </div>
                 )
               })}
             </div>
+            <div className="h-32 w-full shrink-0"></div>
           </div>
         )}
 
@@ -559,7 +639,6 @@ export default function Home() {
           </div>
         )}
         
-        {/* SPAZIATORE EXTRA PER BARRA INFERIORE GLOBALE */}
         <div className="h-32 w-full shrink-0"></div>
 
       </div>
@@ -694,7 +773,7 @@ export default function Home() {
       )}
 
       {/* ========================================= */}
-      {/* 🚀 MODALE: DASHBOARD EVENTO E TABELLONE (Ora è una Pagina Indipendente Sopra a Tutto!) */}
+      {/* 🚀 MODALE: DASHBOARD EVENTO E TABELLONE   */}
       {/* ========================================= */}
       {dashboardEvento && (
         <div className="fixed inset-0 z-[100] bg-[#f8fafc] overflow-y-auto flex flex-col text-blue-900 animate-in slide-in-from-bottom-8 duration-300">
@@ -706,7 +785,6 @@ export default function Home() {
 
           <div className="p-4 flex-1 flex flex-col gap-6 pb-24 max-w-lg mx-auto w-full">
             
-            {/* CLASSIFICA AMERICANA LIVE */}
             {dashboardEvento.tipo === 'Americana' ? (
               <div className="bg-white rounded-3xl p-4 shadow-xl border border-gray-200">
                 <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Classifica Live (Game Fatti)</h3>
@@ -738,14 +816,30 @@ export default function Home() {
                       <h4 className="text-center font-black text-blue-800 bg-blue-100 rounded-md text-[10px] py-1 mb-2 uppercase">{fase}</h4>
                       <div className="flex flex-col gap-2">
                         {matchFase.map((p:any, i:number) => {
-                          const nA1=giocatori.find(g=>g.id.toString()===p.sqA[0])?.Nome; const nA2=giocatori.find(g=>g.id.toString()===p.sqA[1])?.Nome;
-                          const nB1=giocatori.find(g=>g.id.toString()===p.sqB[0])?.Nome; const nB2=giocatori.find(g=>g.id.toString()===p.sqB[1])?.Nome;
+                          const nA1=giocatori.find(g=>g.id.toString()===p.sqA?.[0])?.Nome || '---'; const nA2=giocatori.find(g=>g.id.toString()===p.sqA?.[1])?.Nome || '---';
+                          const nB1=giocatori.find(g=>g.id.toString()===p.sqB?.[0])?.Nome || '---'; const nB2=giocatori.find(g=>g.id.toString()===p.sqB?.[1])?.Nome || '---';
+                          const isGiocata = p.gameA !== '' && p.gameB !== '';
                           const vA = p.gameA > p.gameB; const vB = p.gameB > p.gameA;
+                          
                           return (
-                            <div key={i} className="flex justify-between items-center bg-gray-50 p-3 rounded-2xl text-[10px] font-bold uppercase border border-gray-200">
-                              <div className={`flex flex-col w-[40%] leading-tight ${vA?'text-green-700 font-black':'text-gray-400'}`}><span>{nA1}</span><span>{nA2}</span></div>
-                              <div className="bg-white px-2 py-1 rounded shadow-sm border font-black text-lg w-[20%] text-center"><span className={vA?'text-green-600':'text-gray-500'}>{p.gameA}</span> - <span className={vB?'text-green-600':'text-gray-500'}>{p.gameB}</span></div>
-                              <div className={`flex flex-col w-[40%] text-right leading-tight ${vB?'text-green-700 font-black':'text-gray-400'}`}><span>{nB1}</span><span>{nB2}</span></div>
+                            <div key={p.id} className={`w-full flex flex-col gap-2 p-3 rounded-2xl border ${isGiocata ? 'bg-gray-50 border-gray-200' : 'bg-blue-50/50 border-blue-200 shadow-sm'}`}>
+                              <div className="flex justify-between items-center text-[10px] font-bold uppercase w-full">
+                                <div className={`flex flex-col w-[35%] leading-tight text-center ${vA?'text-green-700 font-black':'text-blue-900'}`}><span>{nA1}</span><span>{nA2}</span></div>
+                                
+                                {isGiocata ? (
+                                  <div className="bg-white px-2 py-1 rounded shadow-sm border font-black text-lg w-[30%] text-center shrink-0"><span className={vA?'text-green-600':'text-gray-500'}>{p.gameA}</span> - <span className={vB?'text-green-600':'text-gray-500'}>{p.gameB}</span></div>
+                                ) : (
+                                  <div className="flex gap-1 w-[30%] justify-center shrink-0">
+                                     <input type="number" id={`gA-${p.id}`} disabled={p.sqA.length===0} className="w-10 p-2 text-center border border-blue-200 rounded-lg font-black text-blue-600 bg-white shadow-inner outline-none disabled:opacity-50" />
+                                     <span className="mt-2 text-gray-400">-</span>
+                                     <input type="number" id={`gB-${p.id}`} disabled={p.sqB.length===0} className="w-10 p-2 text-center border border-orange-200 rounded-lg font-black text-orange-600 bg-white shadow-inner outline-none disabled:opacity-50" />
+                                  </div>
+                                )}
+                                <div className={`flex flex-col w-[35%] leading-tight text-center ${vB?'text-green-700 font-black':'text-orange-900'}`}><span>{nB1}</span><span>{nB2}</span></div>
+                              </div>
+                              {!isGiocata && p.sqA.length>0 && p.sqB.length>0 && (dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
+                                 <button onClick={() => salvaRisultatoGenerico(p.id)} disabled={inviando} className="w-full mt-1 bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-md disabled:opacity-50">Invia e Passa il Turno</button>
+                              )}
                             </div>
                           )
                         })}
@@ -753,46 +847,9 @@ export default function Home() {
                     </div>
                   )
                 })}
-                {(dashboardEvento.partite_evento?.length === 0) && <p className="text-center text-[10px] font-bold text-gray-400">Nessuna partita registrata.</p>}
               </div>
             )}
 
-            {/* 👇 INSERIMENTO MANUALE SOLO PER I TORNEI 👇 */}
-            {dashboardEvento.tipo === 'Torneo' && (dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-3xl p-5 shadow-inner border border-blue-200">
-                <h3 className="text-xs font-black uppercase text-blue-800 mb-4 text-center">Inserisci Risultato Match</h3>
-                <div className="flex flex-col gap-4">
-                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
-                    <span className="text-[10px] font-black uppercase text-blue-500 mb-1 block">Fase del Torneo</span>
-                    <select value={evFase} onChange={e=>setEvFase(e.target.value)} className="w-full p-2 bg-gray-50 rounded-lg text-sm font-black text-blue-900 outline-none border cursor-pointer">
-                      <option value="Ottavi">Ottavi di Finale</option>
-                      <option value="Quarti">Quarti di Finale</option>
-                      <option value="Semifinale">Semifinale</option>
-                      <option value="Finale">Finale</option>
-                    </select>
-                  </div>
-                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
-                    <span className="text-[10px] font-black uppercase text-blue-500 mb-2 block">Squadra A</span>
-                    <div className="flex gap-2">
-                      <select value={evSqA1} onChange={e=>setEvSqA1(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 1</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
-                      <select value={evSqA2} onChange={e=>setEvSqA2(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 2</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
-                    </div>
-                    <input type="number" placeholder="Game Vinti da Sq. A" value={evGameA} onChange={e=>setEvGameA(Number(e.target.value))} className="w-full mt-2 p-3 bg-gray-50 rounded-xl font-black text-center text-blue-900 border border-blue-200" />
-                  </div>
-                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100">
-                    <span className="text-[10px] font-black uppercase text-orange-500 mb-2 block">Squadra B</span>
-                    <div className="flex gap-2">
-                      <select value={evSqB1} onChange={e=>setEvSqB1(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 1</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
-                      <select value={evSqB2} onChange={e=>setEvSqB2(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 2</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
-                    </div>
-                    <input type="number" placeholder="Game Vinti da Sq. B" value={evGameB} onChange={e=>setEvGameB(Number(e.target.value))} className="w-full mt-2 p-3 bg-gray-50 rounded-xl font-black text-center text-orange-900 border border-orange-200" />
-                  </div>
-                  <button onClick={aggiungiPartitaEvento} disabled={inviando} className="bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg disabled:opacity-50">{inviando ? 'Salvataggio...' : '➕ Registra Risultato'}</button>
-                </div>
-              </div>
-            )}
-
-            {/* 👇 CALENDARIO GENERATO IN AUTOMATICO PER L'AMERICANA 👇 */}
             {dashboardEvento.tipo === 'Americana' && dashboardEvento.partite_evento?.length > 0 && (
               <div className="bg-white rounded-3xl p-4 shadow-xl border border-gray-200 mt-2">
                 <h3 className="text-xs font-black uppercase text-gray-500 mb-3 text-center">Calendario Americana</h3>
@@ -820,7 +877,7 @@ export default function Home() {
                           <div className="flex flex-col w-[35%] text-orange-900 leading-tight text-center"><span>{nB1}</span><span>{nB2}</span></div>
                         </div>
                         {!isGiocata && (dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
-                           <button onClick={() => salvaRisultatoAmericana(p.id)} disabled={inviando} className="w-full mt-1 bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-md disabled:opacity-50">Salva Risultato</button>
+                           <button onClick={() => salvaRisultatoGenerico(p.id)} disabled={inviando} className="w-full mt-1 bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-md disabled:opacity-50">Salva Risultato</button>
                         )}
                       </div>
                     )
@@ -829,6 +886,13 @@ export default function Home() {
               </div>
             )}
             
+            {dashboardEvento.stato === 'In Corso' && dashboardEvento.creatore_id === mioGiocatoreId && (
+               <button onClick={chiudiEvento} disabled={inviando} className="w-full mt-4 bg-gradient-to-r from-yellow-400 to-yellow-500 text-blue-900 py-4 rounded-2xl text-sm font-black uppercase shadow-xl hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+                 🏆 Concludi Evento e Assegna Punti
+               </button>
+            )}
+
+            <div className="h-10"></div>
           </div>
         </div>
       )}
