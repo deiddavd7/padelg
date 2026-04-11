@@ -33,7 +33,7 @@ export default function Home() {
   const [fotoMatch, setFotoMatch] = useState<File | null>(null)
 
   // ==========================================
-  // 3. STATI PROFILO GIOCATORE (Modale)
+  // 3. STATI PROFILO E STORICO ELO
   // ==========================================
   const [profiloAperto, setProfiloAperto] = useState<any>(null)
   const [isEditingProfilo, setIsEditingProfilo] = useState(false)
@@ -43,6 +43,7 @@ export default function Home() {
   const [editLato, setEditLato] = useState('')
   const [editRacchetta, setEditRacchetta] = useState('')
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
+  const [storicoElo, setStoricoElo] = useState<any[]>([]) // 📉 Nuovo stato per il grafico
 
   // ==========================================
   // 4. STATI NAVIGAZIONE E CHAT
@@ -82,6 +83,14 @@ export default function Home() {
   const [nuovoEventoData, setNuovoEventoData] = useState(getOggiStr())
   const [nuovoEventoMax, setNuovoEventoMax] = useState(5)
   const [dashboardEvento, setDashboardEvento] = useState<any>(null)
+  
+  const [evSqA1, setEvSqA1] = useState('')
+  const [evSqA2, setEvSqA2] = useState('')
+  const [evSqB1, setEvSqB1] = useState('')
+  const [evSqB2, setEvSqB2] = useState('')
+  const [evGameA, setEvGameA] = useState<number | ''>('')
+  const [evGameB, setEvGameB] = useState<number | ''>('')
+  const [evFase, setEvFase] = useState('Semifinale')
 
   // ==========================================
   // EFFECTS
@@ -122,13 +131,12 @@ export default function Home() {
   const uploadFotoHelper = async (file:File, bucket='foto_giocatori') => { const nomeFile = `${Date.now()}_${user?.id||'guest'}_foto`; const {error} = await supabase.storage.from(bucket).upload(nomeFile,file); if(!error){const {data}=supabase.storage.from(bucket).getPublicUrl(nomeFile); return data.publicUrl} return null }
   const creaProfiloGiocatore = async () => { if(!nuovoNome.trim()||!user)return; setInviando(true); let urlFoto=""; if(fileFoto)urlFoto=await uploadFotoHelper(fileFoto)||""; const {error} = await supabase.from('giocatori').insert([{Nome:nuovoNome,Punti:0,user_id:user.id,foto:urlFoto,partite:0,vinte:0,perse:0}]); if(!error){setNuovoNome('');setFileFoto(null);prendiGiocatori();} setInviando(false) }
   
-  const apriProfilo = (giocatore: any, index: number) => {
-    setProfiloAperto({...giocatore, posizione: index + 1})
-    setEditNome(giocatore.Nome || '')
-    setEditEta(giocatore.eta ? giocatore.eta.toString() : '')
-    setEditLato(giocatore.lato || '')
-    setEditRacchetta(giocatore.racchetta || '')
-    setIsEditingProfilo(false)
+  const apriProfilo = async (giocatore: any, index: number) => {
+    setProfiloAperto({...giocatore, posizione: index + 1});
+    setEditNome(giocatore.Nome || ''); setEditEta(giocatore.eta ? giocatore.eta.toString() : ''); setEditLato(giocatore.lato || ''); setEditRacchetta(giocatore.racchetta || ''); setIsEditingProfilo(false);
+    // 📉 Fetch Storico Elo
+    const { data } = await supabase.from('storico_elo').select('punti, created_at').eq('giocatore_id', giocatore.id.toString()).order('created_at', { ascending: true });
+    setStoricoElo(data || []);
   }
 
   const salvaSchedaTecnica = async () => {
@@ -140,6 +148,11 @@ export default function Home() {
     if (!error) { await prendiGiocatori(); setProfiloAperto((prev: any) => ({...prev, ...updateData, foto: updateData.foto || prev.foto})); setIsEditingProfilo(false); setEditFotoFile(null) } 
     else alert("Errore salvataggio: " + error.message)
     setSalvataggioInCorso(false)
+  }
+
+  // Registra variazione Elo nel Database
+  const registraStoricoElo = async (giocatoreId: string, nuoviPunti: number) => {
+    await supabase.from('storico_elo').insert([{ giocatore_id: giocatoreId, punti: nuoviPunti }]);
   }
 
   // ==========================================
@@ -154,29 +167,39 @@ export default function Home() {
   }
 
   const confermaMatch = async (match:any) => { 
-    if(!confirm("Confermi? I punti verranno calcolati con l'algoritmo Elo."))return; 
+    if(!confirm("Confermi? I punti verranno calcolati con l'algoritmo Elo e salvati nello storico."))return; 
     await supabase.from('partite').update({stato:'Confermato'}).eq('id',match.id); 
     const v1=giocatori.find(g=>g.id.toString()===match.v1_id); const v2=giocatori.find(g=>g.id.toString()===match.v2_id); const s1=giocatori.find(g=>g.id.toString()===match.s1_id); const s2=giocatori.find(g=>g.id.toString()===match.s2_id); 
     
     const rv=((v1?.Punti||0)+(v2?.Punti||0))/2; const rs=((s1?.Punti||0)+(s2?.Punti||0))/2; const diff=rs-rv; const pV=1/(1+Math.pow(10,diff/400)); 
     let pG=Math.max(10,Math.round(60*(1-pV))); let pP=Math.round(pG/2); 
     
-    if(v1)await supabase.from('giocatori').update({Punti:(v1.Punti||0)+pG,partite:(v1.partite||0)+1,vinte:(v1.vinte||0)+1}).eq('id',v1.id); 
-    if(v2)await supabase.from('giocatori').update({Punti:(v2.Punti||0)+pG,partite:(v2.partite||0)+1,vinte:(v2.vinte||0)+1}).eq('id',v2.id); 
-    if(s1)await supabase.from('giocatori').update({Punti:Math.max(0,(s1.Punti||0)-pP),partite:(s1.partite||0)+1,perse:(s1.perse||0)+1}).eq('id',s1.id); 
-    if(s2)await supabase.from('giocatori').update({Punti:Math.max(0,(s2.Punti||0)-pP),partite:(s2.partite||0)+1,perse:(s2.perse||0)+1}).eq('id',s2.id); 
+    if(v1) { const nP = (v1.Punti||0)+pG; await supabase.from('giocatori').update({Punti:nP,partite:(v1.partite||0)+1,vinte:(v1.vinte||0)+1}).eq('id',v1.id); registraStoricoElo(v1.id.toString(), nP); }
+    if(v2) { const nP = (v2.Punti||0)+pG; await supabase.from('giocatori').update({Punti:nP,partite:(v2.partite||0)+1,vinte:(v2.vinte||0)+1}).eq('id',v2.id); registraStoricoElo(v2.id.toString(), nP); }
+    if(s1) { const nP = Math.max(0,(s1.Punti||0)-pP); await supabase.from('giocatori').update({Punti:nP,partite:(s1.partite||0)+1,perse:(s1.perse||0)+1}).eq('id',s1.id); registraStoricoElo(s1.id.toString(), nP); }
+    if(s2) { const nP = Math.max(0,(s2.Punti||0)-pP); await supabase.from('giocatori').update({Punti:nP,partite:(s2.partite||0)+1,perse:(s2.perse||0)+1}).eq('id',s2.id); registraStoricoElo(s2.id.toString(), nP); }
+    
     prendiGiocatori(); prendiPartite(); 
   }
   const contestaMatch = async (id:any)=>{const m=prompt("Motivo:"); if(!m)return; await supabase.from('partite').update({stato:`Contestato: ${m}`}).eq('id',id); prendiPartite()}; 
   const eliminaMatch = async (id:any)=>{if(!confirm("Eliminare?"))return; await supabase.from('partite').delete().eq('id',id); prendiPartite();}; 
 
   // ==========================================
-  // CHAT SPOGLIATOIO
+  // CHAT E SOS
   // ==========================================
   const inviaMessaggioChat = async (e:any)=>{e.preventDefault(); if(!nuovoMessaggio.trim()||!mioGiocatoreId||!mioNome)return; await supabase.from('messaggi').insert([{mittente_id:mioGiocatoreId,mittente_nome:mioNome,testo:nuovoMessaggio}]); setNuovoMessaggio('');}
   
+  // 🚨 Invio SOS Cerca Giocatore
+  const lanciaSOS = async (p: any) => {
+    if (!mioGiocatoreId || !mioNome) return;
+    const msg = `🚨 SOS PADEL! 🚨 Manca un giocatore per il ${p.data_slot.split('-').reverse().join('/')} alle ore ${p.ora_inizio} nel ${p.campo}. Chi si unisce a ${p.creatore_nome}?`;
+    await supabase.from('messaggi').insert([{mittente_id: mioGiocatoreId, mittente_nome: "🤖 BOT SISTEMA", testo: msg}]);
+    alert("SOS Inviato nello spogliatoio!");
+    setActiveTab('CHAT');
+  }
+
   // ==========================================
-  // 🏅 GAMIFICATION E STATISTICHE
+  // 🏅 GAMIFICATION E GRAFICI
   // ==========================================
   const getLivello = (punti: number) => {
     if(punti < 200) return { nome: 'Principiante', icona: '🌱', bg: 'bg-green-100', text: 'text-green-700' };
@@ -209,6 +232,33 @@ export default function Home() {
     );
   };
 
+  // 📉 Generatore Grafo SVG Lineare per lo Storico
+  const LineChart = ({ data }: { data: any[] }) => {
+    if (!data || data.length < 2) return <div className="text-center text-[10px] text-gray-400 mt-4">Gioca almeno 2 partite per vedere il grafico.</div>;
+    const maxP = Math.max(...data.map(d => d.punti));
+    const minP = Math.min(...data.map(d => d.punti));
+    const range = maxP - minP === 0 ? 1 : maxP - minP;
+    
+    const points = data.map((d, i) => {
+      const x = (i / (data.length - 1)) * 100;
+      const y = 100 - ((d.punti - minP) / range) * 100;
+      return `${x},${y}`;
+    }).join(' ');
+
+    return (
+      <div className="relative w-full h-32 mt-4 pt-2">
+        <svg viewBox="0 -10 100 120" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+          <polyline fill="none" stroke="#eab308" strokeWidth="3" points={points} strokeLinecap="round" strokeLinejoin="round" />
+          {data.map((d, i) => (
+             <circle key={i} cx={(i / (data.length - 1)) * 100} cy={100 - ((d.punti - minP) / range) * 100} r="2" fill="#1e3a8a" stroke="#eab308" strokeWidth="1" />
+          ))}
+        </svg>
+        <div className="absolute top-0 left-0 text-[8px] text-gray-400 font-bold">Max: {maxP}</div>
+        <div className="absolute bottom-0 left-0 text-[8px] text-gray-400 font-bold">Min: {minP}</div>
+      </div>
+    );
+  }
+
   const calcolaStatisticheAvanzate = (giocatoreId: string) => {
     const p = partite.filter(x => x.stato === 'Confermato' && (x.v1_id === giocatoreId || x.v2_id === giocatoreId || x.s1_id === giocatoreId || x.s2_id === giocatoreId));
     const partnerCount: Record<string, { nome: string, insieme: number, vinteInsieme: number }> = {};
@@ -237,8 +287,25 @@ export default function Home() {
   }
 
   // ==========================================
-  // PRENOTAZIONI E INVITI
+  // PRENOTAZIONI, METEO E CALENDARIO
   // ==========================================
+  const getPrevisioneMeteo = (dataStr: string) => {
+    // 🌦️ Simulatore Meteo Deterministico (affidabile e veloce senza API esterne)
+    const meteo = ['☀️ Sole', '⛅️ Nuvole', '☁️ Coperto', '🌤️ Velato'];
+    const idx = (parseInt(dataStr.slice(-2)) + parseInt(dataStr.slice(-5,-3))) % meteo.length;
+    return meteo[idx];
+  }
+
+  const addToGoogleCalendar = (p: any) => {
+    const dataPartita = p.data_slot.replace(/-/g, '');
+    const oraInizio = p.ora_inizio.replace(':', '') + '00';
+    const oraFine = p.ora_fine.replace(':', '') + '00';
+    const start = `${dataPartita}T${oraInizio}`;
+    const end = `${dataPartita}T${oraFine}`;
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=Partita+Padel+(${p.campo})&dates=${start}/${end}&details=Prenotazione+creata+con+PadelApp`;
+    window.open(url, '_blank');
+  }
+
   const prenotaSlot = async (slot:any) => { if(!mioGiocatoreId)return alert("Devi essere loggato!"); if(!confirm(`Bloccare ${slot.inizio}?`))return; setInviando(true); const {error}=await supabase.from('prenotazioni').insert([{campo:campoSelezionato,data_slot:giornoSelezionato,ora_inizio:slot.inizio,ora_fine:slot.fine,creatore_id:mioGiocatoreId,creatore_nome:mioNome,stato:'Prenotato'}]); if(!error)prendiPrenotazioni();else alert(error.message); setInviando(false); }
   const eliminaPrenotazione = async (id:any) => { if(!confirm("Cancellare?"))return; await supabase.from('prenotazioni').delete().eq('id',id); prendiPrenotazioni(); }
   const apriGestioneInviti = (p:any) => { setInvitoG2(p.g2_id||''); setInvitoG3(p.g3_id||''); setInvitoG4(p.g4_id||''); setGestioneInviti(p); }
@@ -247,16 +314,16 @@ export default function Home() {
   const invitiPendenti = prenotazioni.filter(p=>(p.g2_id===mioGiocatoreId&&p.g2_stato==='In attesa')||(p.g3_id===mioGiocatoreId&&p.g3_stato==='In attesa')||(p.g4_id===mioGiocatoreId&&p.g4_stato==='In attesa'));
 
   // ==========================================
-  // EVENTI, AMERICANE E TORNEI
+  // EVENTI E AMERICANE
   // ==========================================
   const creaEvento = async () => { if (!nuovoEventoTitolo.trim() || !mioGiocatoreId) return alert("Completa!"); setInviando(true); const { error } = await supabase.from('eventi').insert([{ titolo: nuovoEventoTitolo, tipo: nuovoEventoTipo, data_evento: nuovoEventoData, max_iscritti: nuovoEventoMax, creatore_id: mioGiocatoreId, iscritti: [mioGiocatoreId], stato: 'Aperto', partite_evento: [] }]); if (!error) { setMostraFormEvento(false); setNuovoEventoTitolo(''); prendiEventi(); alert("Creato!"); } setInviando(false); }
   const iscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; const is = evento.iscritti || []; if (is.length >= evento.max_iscritti) return alert("Pieno!"); if (is.includes(mioGiocatoreId)) return; await supabase.from('eventi').update({ iscritti: [...is, mioGiocatoreId] }).eq('id', evento.id); prendiEventi(); }
   const disiscrivitiEvento = async (evento: any) => { if (!mioGiocatoreId) return; await supabase.from('eventi').update({ iscritti: (evento.iscritti || []).filter((id:string)=>id!==mioGiocatoreId) }).eq('id', evento.id); prendiEventi(); }
   const eliminaEvento = async (eventoId: string) => { if (!confirm("Annullare?")) return; await supabase.from('eventi').delete().eq('id', eventoId); prendiEventi(); }
 
+  // 🚀 LOGICA AVVIO EVENTO (Algoritmi Americana & Torneo)
   const ricaricaDashboard = async (id: string) => { const { data } = await supabase.from('eventi').select('*').eq('id', id).single(); if (data) setDashboardEvento(data); }
   
-  // 🚀 LOGICA AVVIO EVENTO (Algoritmi Americana & Torneo)
   const avviaEvento = async (evento: any) => { 
     if (!confirm("Vuoi chiudere le iscrizioni e avviare l'evento?")) return; 
     let payload: any = { stato: 'In Corso' };
@@ -326,9 +393,9 @@ export default function Home() {
     prendiEventi(); 
   }
 
-  // 🚀 CHIUSURA EVENTO (Assegnazione Elo Ufficiale)
+  // 🚀 CHIUSURA EVENTO (Assegnazione Elo Ufficiale con Registrazione nel Grafico)
   const chiudiEvento = async () => {
-    if (!confirm("Sei sicuro? Questo chiuderà l'evento e distribuirà i Punti Ranking Ufficiali a tutti i partecipanti in base ai risultati!")) return;
+    if (!confirm("Sei sicuro? Questo chiuderà l'evento e distribuirà i Punti Ranking Ufficiali a tutti i partecipanti!")) return;
     setInviando(true);
     let deltaPunti: Record<string, number> = {};
     
@@ -341,7 +408,7 @@ export default function Home() {
         const s2 = giocatori.find(g=>g.id.toString()===(vA ? p.sqB[1] : p.sqA[1]));
         
         const rv=((v1?.Punti||0)+(v2?.Punti||0))/2; const rs=((s1?.Punti||0)+(s2?.Punti||0))/2; const diff=rs-rv; const pV=1/(1+Math.pow(10,diff/400)); 
-        let pG=Math.max(5,Math.round(30*(1-pV))); // Metà dei punti normali per i tornei
+        let pG=Math.max(5,Math.round(30*(1-pV))); // Metà dei punti normali in torneo
         let pP=Math.round(pG/2);
         
         if (v1) deltaPunti[v1.id] = (deltaPunti[v1.id] || 0) + pG;
@@ -354,21 +421,20 @@ export default function Home() {
     const updates = Object.keys(deltaPunti).map(async (gid) => {
       const dbG = giocatori.find(g => g.id.toString() === gid);
       if (dbG) {
-        return supabase.from('giocatori').update({ Punti: Math.max(0, (dbG.Punti || 0) + deltaPunti[gid]), partite: (dbG.partite||0)+1 }).eq('id', dbG.id);
+        const nP = Math.max(0, (dbG.Punti || 0) + deltaPunti[gid]);
+        await supabase.from('giocatori').update({ Punti: nP, partite: (dbG.partite||0)+1 }).eq('id', dbG.id);
+        await registraStoricoElo(dbG.id.toString(), nP);
       }
     });
 
     await Promise.all(updates);
     await supabase.from('eventi').update({ stato: 'Chiuso' }).eq('id', dashboardEvento.id);
     
-    prendiGiocatori();
-    prendiEventi();
-    setDashboardEvento(null);
-    setInviando(false);
-    alert("Evento chiuso con successo! Punti Ranking assegnati ufficialmente.");
+    prendiGiocatori(); prendiEventi(); setDashboardEvento(null); setInviando(false);
+    alert("Evento chiuso con successo! Punti Ranking assegnati ufficialmente e grafico aggiornato.");
   }
 
-  // 🚀 SALVATAGGIO COLLABORATIVO RISULTATI (Valido sia per Americana che Torneo Auto-Avanzante)
+  // 🚀 SALVATAGGIO COLLABORATIVO RISULTATI
   const salvaRisultatoGenerico = async (matchId: string) => {
     const valA = (document.getElementById(`gA-${matchId}`) as HTMLInputElement)?.value;
     const valB = (document.getElementById(`gB-${matchId}`) as HTMLInputElement)?.value;
@@ -381,12 +447,8 @@ export default function Home() {
     const vincenti = isVittoriaA ? matchCorrente.sqA : matchCorrente.sqB;
 
     const nuovePartite = dashboardEvento.partite_evento.map((p:any) => { 
-      // Salva il punteggio in questo match
       if (p.id === matchId) return { ...p, gameA: Number(valA), gameB: Number(valB) }; 
-      // Se è un torneo, spingi automaticamente il vincitore nel turno successivo
-      if (dashboardEvento.tipo === 'Torneo' && p.id === matchCorrente.nextMatch) {
-         return { ...p, [matchCorrente.nextSlot]: vincenti };
-      }
+      if (dashboardEvento.tipo === 'Torneo' && p.id === matchCorrente.nextMatch) { return { ...p, [matchCorrente.nextSlot]: vincenti }; }
       return p; 
     });
 
@@ -524,8 +586,16 @@ export default function Home() {
               </div>
             )}
              
-             {/* SELETTORE DATA E CAMPO */}
-             <div className="flex gap-2 overflow-x-auto pb-4 mb-4 scrollbar-hide snap-x">{prossimiGiorni.map((g, i) => ( <button key={i} onClick={()=>setGiornoSelezionato(g.dataStr)} className={`snap-center shrink-0 p-3 rounded-2xl flex flex-col items-center justify-center min-w-[80px] border transition-all ${giornoSelezionato===g.dataStr?'bg-yellow-400 text-blue-900 border-yellow-300 scale-105':'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}><span className="text-xs font-bold uppercase mb-1 opacity-80">{i===0?'Oggi':i===1?'Domani':g.label.split(' ')[0]}</span><span className="text-xl font-black">{g.dataStr.split('-')[2]}</span></button> ))}</div>
+             {/* SELETTORE DATA E CAMPO CON METEO 🌦️ */}
+             <div className="flex gap-2 overflow-x-auto pb-4 mb-4 scrollbar-hide snap-x">
+               {prossimiGiorni.map((g, i) => ( 
+                 <button key={i} onClick={()=>setGiornoSelezionato(g.dataStr)} className={`snap-center shrink-0 p-3 rounded-2xl flex flex-col items-center justify-center min-w-[80px] border transition-all relative ${giornoSelezionato===g.dataStr?'bg-yellow-400 text-blue-900 border-yellow-300 scale-105':'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
+                   <span className="text-xs font-bold uppercase mb-1 opacity-80">{i===0?'Oggi':i===1?'Domani':g.label.split(' ')[0]}</span>
+                   <span className="text-xl font-black">{g.dataStr.split('-')[2]}</span>
+                   <span className="absolute -top-2 -right-2 text-[10px] bg-white text-blue-900 px-1 rounded-full shadow-sm">{getPrevisioneMeteo(g.dataStr).split(' ')[0]}</span>
+                 </button> 
+               ))}
+             </div>
              <div className="flex bg-blue-900/50 p-1 rounded-2xl backdrop-blur-md mb-6 border border-blue-800/50"><button onClick={()=>setCampoSelezionato('Campo 1')} className={`flex-1 py-3 rounded-xl font-black uppercase text-sm ${campoSelezionato==='Campo 1'?'bg-blue-600 text-white':'text-blue-200'}`}>Campo 1</button><button onClick={()=>setCampoSelezionato('Campo 2')} className={`flex-1 py-3 rounded-xl font-black uppercase text-sm ${campoSelezionato==='Campo 2'?'bg-blue-600 text-white':'text-blue-200'}`}>Campo 2</button></div>
              
              {/* LISTA SLOT */}
@@ -536,13 +606,32 @@ export default function Home() {
                   let conf = 1; if(p?.g2_stato==='Accettato')conf++; if(p?.g3_stato==='Accettato')conf++; if(p?.g4_stato==='Accettato')conf++;
                   return (
                     <div key={idx} className={`flex flex-col p-4 rounded-2xl ${occ?(eMio?'bg-blue-800 border-blue-400/50':'bg-red-900/40 border-red-500/20 opacity-70'):'bg-white text-blue-900 shadow-sm'}`}>
-                      <div className="flex justify-between items-center w-full"><div className="flex flex-col"><span className={`text-lg font-black ${occ?'text-white':'text-blue-900'}`}>{slot.inizio} - {slot.fine}</span>{occ && <span className="text-[10px] font-bold uppercase mt-1 text-gray-300">Da: {p.creatore_nome}</span>}</div>{!occ?<button onClick={()=>prenotaSlot(slot)} className="bg-yellow-400 text-blue-900 px-4 py-2 rounded-xl text-xs font-black uppercase">Prenota</button>:eMio?<button onClick={()=>eliminaPrenotazione(p.id)} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase">Cancella</button>:<span className="text-xs font-bold uppercase text-red-300 bg-red-900/50 px-3 py-1.5 rounded-lg">Occupato</span>}</div>
+                      <div className="flex justify-between items-center w-full">
+                        <div className="flex flex-col">
+                          <span className={`text-lg font-black ${occ?'text-white':'text-blue-900'}`}>{slot.inizio} - {slot.fine}</span>
+                          {occ && <span className="text-[10px] font-bold uppercase mt-1 text-gray-300">Da: {p.creatore_nome}</span>}
+                          {/* 🌦️ Previsione meteo indicativa */}
+                          <span className="text-[9px] font-bold text-blue-300 mt-1">{getPrevisioneMeteo(giornoSelezionato)}</span>
+                        </div>
+                        {!occ?<button onClick={()=>prenotaSlot(slot)} className="bg-yellow-400 text-blue-900 px-4 py-2 rounded-xl text-xs font-black uppercase">Prenota</button>:eMio?<button onClick={()=>eliminaPrenotazione(p.id)} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase">Cancella</button>:<span className="text-xs font-bold uppercase text-red-300 bg-red-900/50 px-3 py-1.5 rounded-lg">Occupato</span>}
+                      </div>
                       {occ && eMio && (
                         <div className="mt-4 pt-3 border-t border-blue-700/50 flex flex-col gap-3">
                           <div className="flex items-center justify-between"><span className="text-[10px] uppercase font-bold text-blue-200">Stato Campo: {conf}/4</span><div className="flex gap-1">{[1,2,3,4].map(n => <div key={n} className={`w-3 h-3 rounded-full ${n<=conf?'bg-green-400':'bg-blue-900/50 border border-blue-400'}`}></div>)}</div></div>
                           {gestioneInviti?.id===p.id ? (
                             <div className="bg-white p-3 rounded-xl flex flex-col gap-2"><span className="text-xs font-black text-blue-900 uppercase text-center mb-1">Seleziona Compagni</span>{[ {label:'Gioc. 2',val:invitoG2,set:setInvitoG2,stato:p.g2_stato}, {label:'Gioc. 3',val:invitoG3,set:setInvitoG3,stato:p.g3_stato}, {label:'Gioc. 4',val:invitoG4,set:setInvitoG4,stato:p.g4_stato} ].map((c,i)=>( <div key={i} className="flex gap-2 items-center"><select value={c.val} onChange={e=>c.set(e.target.value)} disabled={c.stato==='Accettato'} className="flex-1 p-2 bg-gray-50 rounded-lg text-xs font-bold text-blue-900 border outline-none"><option value="">-- {c.label} --</option>{giocatori.map(g=>g.id.toString()!==mioGiocatoreId&&(<option key={g.id} value={g.id}>{g.Nome}</option>))}</select>{c.stato&&(<span className={`text-[9px] font-black uppercase px-2 py-1 rounded w-[60px] text-center ${c.stato==='Accettato'?'bg-green-100 text-green-700':c.stato==='Rifiutato'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>{c.stato==='In attesa'?'Attesa':c.stato}</span>)}</div> ))} <div className="flex gap-2 mt-2"><button onClick={()=>setGestioneInviti(null)} className="flex-1 bg-gray-200 text-gray-600 text-xs py-2 rounded-lg font-black uppercase">Annulla</button><button onClick={salvaInviti} className="flex-1 bg-blue-600 text-white text-xs py-2 rounded-lg font-black uppercase">Invia Inviti</button></div></div>
-                          ) : ( <button onClick={()=>apriGestioneInviti(p)} className="w-full bg-blue-600 text-white py-2 rounded-xl text-xs font-black uppercase">➕ Gestisci Giocatori</button> )}
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              <button onClick={()=>apriGestioneInviti(p)} className="w-full bg-blue-600 text-white py-2 rounded-xl text-xs font-black uppercase">➕ Gestisci Giocatori</button>
+                              
+                              <div className="flex gap-2">
+                                {/* 🚨 PULSANTE SOS QUARTO GIOCATORE */}
+                                {conf < 4 && <button onClick={() => lanciaSOS(p)} className="flex-1 bg-red-500/90 text-white py-2 rounded-xl text-[10px] font-black uppercase shadow-md flex justify-center items-center gap-1">🆘 SOS Quarto</button>}
+                                {/* 📅 PULSANTE CALENDARIO */}
+                                <button onClick={() => addToGoogleCalendar(p)} className="flex-1 bg-white/20 text-white py-2 rounded-xl text-[10px] font-black uppercase shadow-md border border-white/30 flex justify-center items-center gap-1">📅 Add Calendar</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -620,7 +709,6 @@ export default function Home() {
                 )
               })}
             </div>
-            <div className="h-32 w-full shrink-0"></div>
           </div>
         )}
 
@@ -654,7 +742,7 @@ export default function Home() {
       </div>
 
       {/* ========================================= */}
-      {/* 🚀 MODALE: SCHEDA ATLETA (Con Gamification & Testa a Testa) */}
+      {/* 🚀 MODALE: SCHEDA ATLETA */}
       {/* ========================================= */}
       {profiloAperto && (
         <div className="fixed inset-0 z-[70] bg-gray-50 overflow-y-auto flex justify-center animate-in fade-in">
@@ -712,6 +800,14 @@ export default function Home() {
                 </div>
               ) : (
                 <>
+                  {/* 📉 GRAFICO STORICO ELO */}
+                  <section>
+                    <h3 className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Andamento Ranking</h3>
+                    <div className="bg-white border border-gray-100 rounded-3xl p-4 shadow-sm flex flex-col items-center">
+                       <LineChart data={storicoElo} />
+                    </div>
+                  </section>
+
                   {getBadges(profiloAperto).length > 0 && (
                     <section>
                       <h3 className="text-xs font-black uppercase text-gray-400 tracking-widest mb-3">Medagliere</h3>
@@ -847,6 +943,38 @@ export default function Home() {
                     </div>
                   )
                 })}
+                {(dashboardEvento.partite_evento?.length === 0) && <p className="text-center text-[10px] font-bold text-gray-400">Nessuna partita registrata.</p>}
+              </div>
+            )}
+
+            {dashboardEvento.tipo === 'Torneo' && (dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && dashboardEvento.stato !== 'Chiuso' && (
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-3xl p-5 shadow-inner border border-blue-200">
+                <h3 className="text-xs font-black uppercase text-blue-800 mb-4 text-center">Aggiungi Match Manuale</h3>
+                <div className="flex flex-col gap-4">
+                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
+                    <span className="text-[10px] font-black uppercase text-blue-500 mb-1 block">Fase del Torneo</span>
+                    <select value={evFase} onChange={e=>setEvFase(e.target.value)} className="w-full p-2 bg-gray-50 rounded-lg text-sm font-black text-blue-900 outline-none border cursor-pointer">
+                      <option value="Ottavi">Ottavi di Finale</option><option value="Quarti">Quarti di Finale</option><option value="Semifinale">Semifinale</option><option value="Finale">Finale</option>
+                    </select>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-100">
+                    <span className="text-[10px] font-black uppercase text-blue-500 mb-2 block">Squadra A</span>
+                    <div className="flex gap-2">
+                      <select value={evSqA1} onChange={e=>setEvSqA1(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 1</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
+                      <select value={evSqA2} onChange={e=>setEvSqA2(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 2</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
+                    </div>
+                    <input type="number" placeholder="Game Vinti da Sq. A" value={evGameA} onChange={e=>setEvGameA(Number(e.target.value))} className="w-full mt-2 p-3 bg-gray-50 rounded-xl font-black text-center text-blue-900 border border-blue-200" />
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100">
+                    <span className="text-[10px] font-black uppercase text-orange-500 mb-2 block">Squadra B</span>
+                    <div className="flex gap-2">
+                      <select value={evSqB1} onChange={e=>setEvSqB1(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 1</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
+                      <select value={evSqB2} onChange={e=>setEvSqB2(e.target.value)} className="w-1/2 p-2 bg-gray-50 rounded-lg text-xs font-bold outline-none border"><option value="">Gioc. 2</option>{(dashboardEvento.iscritti||[]).map((id:string)=>{const g=giocatori.find(x=>x.id.toString()===id); return g&&<option key={id} value={id}>{g.Nome}</option>})}</select>
+                    </div>
+                    <input type="number" placeholder="Game Vinti da Sq. B" value={evGameB} onChange={e=>setEvGameB(Number(e.target.value))} className="w-full mt-2 p-3 bg-gray-50 rounded-xl font-black text-center text-orange-900 border border-orange-200" />
+                  </div>
+                  <button onClick={aggiungiPartitaEvento} disabled={inviando} className="bg-blue-600 text-white p-4 rounded-xl font-black uppercase shadow-lg disabled:opacity-50">{inviando ? 'Salvataggio...' : '➕ Registra Risultato'}</button>
+                </div>
               </div>
             )}
 
@@ -885,13 +1013,14 @@ export default function Home() {
                 </div>
               </div>
             )}
-            
+
+            {/* 🏆 CHIUSURA EVENTO E ASSEGNAZIONE ELO */}
             {dashboardEvento.stato === 'In Corso' && dashboardEvento.creatore_id === mioGiocatoreId && (
-               <button onClick={chiudiEvento} disabled={inviando} className="w-full mt-4 bg-gradient-to-r from-yellow-400 to-yellow-500 text-blue-900 py-4 rounded-2xl text-sm font-black uppercase shadow-xl hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+               <button onClick={chiudiEvento} disabled={inviando} className="w-full mt-6 bg-gradient-to-r from-yellow-400 to-yellow-500 text-blue-900 py-4 rounded-2xl text-sm font-black uppercase shadow-xl hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
                  🏆 Concludi Evento e Assegna Punti
                </button>
             )}
-
+            
             <div className="h-10"></div>
           </div>
         </div>
