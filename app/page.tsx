@@ -43,7 +43,7 @@ export default function Home() {
   const [editLato, setEditLato] = useState('')
   const [editRacchetta, setEditRacchetta] = useState('')
   const [salvataggioInCorso, setSalvataggioInCorso] = useState(false)
-  const [storicoElo, setStoricoElo] = useState<any[]>([]) // 📉 Nuovo stato per il grafico
+  const [storicoElo, setStoricoElo] = useState<any[]>([])
 
   // ==========================================
   // 4. STATI NAVIGAZIONE E CHAT
@@ -54,7 +54,7 @@ export default function Home() {
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   // ==========================================
-  // 5. STATI PRENOTAZIONI CAMPI E INVITI
+  // 5. STATI PRENOTAZIONI, INVITI E METEO
   // ==========================================
   const getOggiStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
   const [prenotazioni, setPrenotazioni] = useState<any[]>([])
@@ -64,6 +64,7 @@ export default function Home() {
   const [invitoG2, setInvitoG2] = useState('')
   const [invitoG3, setInvitoG3] = useState('')
   const [invitoG4, setInvitoG4] = useState('')
+  const [meteoData, setMeteoData] = useState<Record<string, string>>({}) // 🛰️ Nuovo stato per il Meteo Reale
 
   const slotGiornalieri = [
     { inizio: '08:00', fine: '09:30' }, { inizio: '09:30', fine: '11:00' }, { inizio: '11:00', fine: '12:30' },
@@ -115,6 +116,37 @@ export default function Home() {
     else { setMioGiocatoreId(null); setMioNome('') }
   }, [user, giocatori])
 
+  // 🛰️ Fetch Meteo Reale per Gadoni (NU)
+  useEffect(() => {
+    const fetchMeteo = async () => {
+      try {
+        // Coordinate per Gadoni, Nuoro, Italia
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9126&longitude=9.1786&daily=weathercode&timezone=Europe%2FRome');
+        const data = await res.json();
+        const meteoMap: Record<string, string> = {};
+        if (data.daily && data.daily.time) {
+          data.daily.time.forEach((date: string, index: number) => {
+            const code = data.daily.weathercode[index];
+            let emoji = '🌤️'; // default
+            if (code === 0) emoji = '☀️'; // Sole
+            else if (code === 1 || code === 2) emoji = '⛅️'; // Poco nuvoloso
+            else if (code === 3) emoji = '☁️'; // Nuvoloso
+            else if (code >= 45 && code <= 48) emoji = '🌫️'; // Nebbia
+            else if (code >= 51 && code <= 67) emoji = '🌧️'; // Pioggia leggera
+            else if (code >= 71 && code <= 77) emoji = '🌨️'; // Neve
+            else if (code >= 80 && code <= 82) emoji = '🌧️'; // Acquazzone
+            else if (code >= 95) emoji = '⛈️'; // Temporale
+            meteoMap[date] = emoji;
+          });
+        }
+        setMeteoData(meteoMap);
+      } catch (e) {
+        console.error("Errore fetch meteo:", e);
+      }
+    };
+    fetchMeteo();
+  }, []);
+
   // ==========================================
   // FETCH FUNZIONI
   // ==========================================
@@ -134,7 +166,6 @@ export default function Home() {
   const apriProfilo = async (giocatore: any, index: number) => {
     setProfiloAperto({...giocatore, posizione: index + 1});
     setEditNome(giocatore.Nome || ''); setEditEta(giocatore.eta ? giocatore.eta.toString() : ''); setEditLato(giocatore.lato || ''); setEditRacchetta(giocatore.racchetta || ''); setIsEditingProfilo(false);
-    // 📉 Fetch Storico Elo
     const { data } = await supabase.from('storico_elo').select('punti, created_at').eq('giocatore_id', giocatore.id.toString()).order('created_at', { ascending: true });
     setStoricoElo(data || []);
   }
@@ -150,7 +181,6 @@ export default function Home() {
     setSalvataggioInCorso(false)
   }
 
-  // Registra variazione Elo nel Database
   const registraStoricoElo = async (giocatoreId: string, nuoviPunti: number) => {
     await supabase.from('storico_elo').insert([{ giocatore_id: giocatoreId, punti: nuoviPunti }]);
   }
@@ -189,7 +219,6 @@ export default function Home() {
   // ==========================================
   const inviaMessaggioChat = async (e:any)=>{e.preventDefault(); if(!nuovoMessaggio.trim()||!mioGiocatoreId||!mioNome)return; await supabase.from('messaggi').insert([{mittente_id:mioGiocatoreId,mittente_nome:mioNome,testo:nuovoMessaggio}]); setNuovoMessaggio('');}
   
-  // 🚨 Invio SOS Cerca Giocatore
   const lanciaSOS = async (p: any) => {
     if (!mioGiocatoreId || !mioNome) return;
     const msg = `🚨 SOS PADEL! 🚨 Manca un giocatore per il ${p.data_slot.split('-').reverse().join('/')} alle ore ${p.ora_inizio} nel ${p.campo}. Chi si unisce a ${p.creatore_nome}?`;
@@ -232,7 +261,6 @@ export default function Home() {
     );
   };
 
-  // 📉 Generatore Grafo SVG Lineare per lo Storico
   const LineChart = ({ data }: { data: any[] }) => {
     if (!data || data.length < 2) return <div className="text-center text-[10px] text-gray-400 mt-4">Gioca almeno 2 partite per vedere il grafico.</div>;
     const maxP = Math.max(...data.map(d => d.punti));
@@ -289,11 +317,10 @@ export default function Home() {
   // ==========================================
   // PRENOTAZIONI, METEO E CALENDARIO
   // ==========================================
+  
+  // 🛰️ Legge il meteo reale scaricato dall'API Open-Meteo per Gadoni
   const getPrevisioneMeteo = (dataStr: string) => {
-    // 🌦️ Simulatore Meteo Deterministico (affidabile e veloce senza API esterne)
-    const meteo = ['☀️ Sole', '⛅️ Nuvole', '☁️ Coperto', '🌤️ Velato'];
-    const idx = (parseInt(dataStr.slice(-2)) + parseInt(dataStr.slice(-5,-3))) % meteo.length;
-    return meteo[idx];
+    return meteoData[dataStr] ? `${meteoData[dataStr]} Gadoni` : '❓ Gadoni';
   }
 
   const addToGoogleCalendar = (p: any) => {
@@ -365,10 +392,10 @@ export default function Home() {
       let seeded = [...iscritti].sort((a,b) => {
          const pA = giocatori.find(g=>g.id.toString()===a)?.Punti || 0;
          const pB = giocatori.find(g=>g.id.toString()===b)?.Punti || 0;
-         return pB - pA; // Più forti per primi
+         return pB - pA;
       });
       let coppie = [];
-      for(let i=0; i<n/2; i++) coppie.push([seeded[i], seeded[n-1-i]]); // Il più forte col più debole
+      for(let i=0; i<n/2; i++) coppie.push([seeded[i], seeded[n-1-i]]); 
 
       let matchGenerati = [];
       if (n === 4) {
@@ -393,7 +420,6 @@ export default function Home() {
     prendiEventi(); 
   }
 
-  // 🚀 CHIUSURA EVENTO (Assegnazione Elo Ufficiale con Registrazione nel Grafico)
   const chiudiEvento = async () => {
     if (!confirm("Sei sicuro? Questo chiuderà l'evento e distribuirà i Punti Ranking Ufficiali a tutti i partecipanti!")) return;
     setInviando(true);
@@ -408,7 +434,7 @@ export default function Home() {
         const s2 = giocatori.find(g=>g.id.toString()===(vA ? p.sqB[1] : p.sqA[1]));
         
         const rv=((v1?.Punti||0)+(v2?.Punti||0))/2; const rs=((s1?.Punti||0)+(s2?.Punti||0))/2; const diff=rs-rv; const pV=1/(1+Math.pow(10,diff/400)); 
-        let pG=Math.max(5,Math.round(30*(1-pV))); // Metà dei punti normali in torneo
+        let pG=Math.max(5,Math.round(30*(1-pV))); 
         let pP=Math.round(pG/2);
         
         if (v1) deltaPunti[v1.id] = (deltaPunti[v1.id] || 0) + pG;
@@ -434,7 +460,6 @@ export default function Home() {
     alert("Evento chiuso con successo! Punti Ranking assegnati ufficialmente e grafico aggiornato.");
   }
 
-  // 🚀 SALVATAGGIO COLLABORATIVO RISULTATI
   const salvaRisultatoGenerico = async (matchId: string) => {
     const valA = (document.getElementById(`gA-${matchId}`) as HTMLInputElement)?.value;
     const valB = (document.getElementById(`gB-${matchId}`) as HTMLInputElement)?.value;
@@ -586,13 +611,14 @@ export default function Home() {
               </div>
             )}
              
-             {/* SELETTORE DATA E CAMPO CON METEO 🌦️ */}
+             {/* SELETTORE DATA E CAMPO CON METEO REALE 🌦️ */}
              <div className="flex gap-2 overflow-x-auto pb-4 mb-4 scrollbar-hide snap-x">
                {prossimiGiorni.map((g, i) => ( 
-                 <button key={i} onClick={()=>setGiornoSelezionato(g.dataStr)} className={`snap-center shrink-0 p-3 rounded-2xl flex flex-col items-center justify-center min-w-[80px] border transition-all relative ${giornoSelezionato===g.dataStr?'bg-yellow-400 text-blue-900 border-yellow-300 scale-105':'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
-                   <span className="text-xs font-bold uppercase mb-1 opacity-80">{i===0?'Oggi':i===1?'Domani':g.label.split(' ')[0]}</span>
-                   <span className="text-xl font-black">{g.dataStr.split('-')[2]}</span>
-                   <span className="absolute -top-2 -right-2 text-[10px] bg-white text-blue-900 px-1 rounded-full shadow-sm">{getPrevisioneMeteo(g.dataStr).split(' ')[0]}</span>
+                 <button key={i} onClick={()=>setGiornoSelezionato(g.dataStr)} className={`snap-center shrink-0 p-3 rounded-2xl flex flex-col items-center justify-center min-w-[80px] border transition-all ${giornoSelezionato===g.dataStr?'bg-yellow-400 text-blue-900 border-yellow-300 scale-105 shadow-md':'bg-white/10 text-white border-white/20 hover:bg-white/20'}`}>
+                   {/* 🛰️ Mostra l'Emoji reale di Open-Meteo per Gadoni */}
+                   <span className="text-xl mb-1 drop-shadow-sm">{getPrevisioneMeteo(g.dataStr).split(' ')[0]}</span>
+                   <span className="text-[10px] font-bold uppercase mb-1 opacity-80">{i===0?'Oggi':i===1?'Domani':g.label.split(' ')[0]}</span>
+                   <span className="text-2xl font-black leading-none">{g.dataStr.split('-')[2]}</span>
                  </button> 
                ))}
              </div>
@@ -610,7 +636,7 @@ export default function Home() {
                         <div className="flex flex-col">
                           <span className={`text-lg font-black ${occ?'text-white':'text-blue-900'}`}>{slot.inizio} - {slot.fine}</span>
                           {occ && <span className="text-[10px] font-bold uppercase mt-1 text-gray-300">Da: {p.creatore_nome}</span>}
-                          {/* 🌦️ Previsione meteo indicativa */}
+                          {/* 🛰️ Mostra la previsione estesa "☀️ Gadoni" */}
                           <span className="text-[9px] font-bold text-blue-300 mt-1">{getPrevisioneMeteo(giornoSelezionato)}</span>
                         </div>
                         {!occ?<button onClick={()=>prenotaSlot(slot)} className="bg-yellow-400 text-blue-900 px-4 py-2 rounded-xl text-xs font-black uppercase">Prenota</button>:eMio?<button onClick={()=>eliminaPrenotazione(p.id)} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase">Cancella</button>:<span className="text-xs font-bold uppercase text-red-300 bg-red-900/50 px-3 py-1.5 rounded-lg">Occupato</span>}
@@ -709,6 +735,7 @@ export default function Home() {
                 )
               })}
             </div>
+            <div className="h-32 w-full shrink-0"></div>
           </div>
         )}
 
@@ -920,7 +947,7 @@ export default function Home() {
                           return (
                             <div key={p.id} className={`w-full flex flex-col gap-2 p-3 rounded-2xl border ${isGiocata ? 'bg-gray-50 border-gray-200' : 'bg-blue-50/50 border-blue-200 shadow-sm'}`}>
                               <div className="flex justify-between items-center text-[10px] font-bold uppercase w-full">
-                                <div className={`flex flex-col w-[35%] leading-tight text-center ${vA?'text-green-700 font-black':'text-blue-900'}`}><span>{nA1}</span><span>{nA2}</span></div>
+                                <div className={`flex flex-col w-[35%] leading-tight text-center ${vA?'text-green-700 font-black':'text-gray-400'}`}><span>{nA1}</span><span>{nA2}</span></div>
                                 
                                 {isGiocata ? (
                                   <div className="bg-white px-2 py-1 rounded shadow-sm border font-black text-lg w-[30%] text-center shrink-0"><span className={vA?'text-green-600':'text-gray-500'}>{p.gameA}</span> - <span className={vB?'text-green-600':'text-gray-500'}>{p.gameB}</span></div>
@@ -931,7 +958,7 @@ export default function Home() {
                                      <input type="number" id={`gB-${p.id}`} disabled={p.sqB.length===0} className="w-10 p-2 text-center border border-orange-200 rounded-lg font-black text-orange-600 bg-white shadow-inner outline-none disabled:opacity-50" />
                                   </div>
                                 )}
-                                <div className={`flex flex-col w-[35%] leading-tight text-center ${vB?'text-green-700 font-black':'text-orange-900'}`}><span>{nB1}</span><span>{nB2}</span></div>
+                                <div className={`flex flex-col w-[35%] leading-tight text-center ${vB?'text-green-700 font-black':'text-gray-400'}`}><span>{nB1}</span><span>{nB2}</span></div>
                               </div>
                               {!isGiocata && p.sqA.length>0 && p.sqB.length>0 && (dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
                                  <button onClick={() => salvaRisultatoGenerico(p.id)} disabled={inviando} className="w-full mt-1 bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-md disabled:opacity-50">Invia e Passa il Turno</button>
@@ -1005,7 +1032,7 @@ export default function Home() {
                           <div className="flex flex-col w-[35%] text-orange-900 leading-tight text-center"><span>{nB1}</span><span>{nB2}</span></div>
                         </div>
                         {!isGiocata && (dashboardEvento.creatore_id === mioGiocatoreId || (dashboardEvento.iscritti || []).includes(mioGiocatoreId)) && (
-                           <button onClick={() => salvaRisultatoGenerico(p.id)} disabled={inviando} className="w-full mt-1 bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-md disabled:opacity-50">Salva Risultato</button>
+                           <button onClick={() => salvaRisultatoAmericana(p.id)} disabled={inviando} className="w-full mt-1 bg-blue-600 text-white text-[10px] font-black py-2 rounded-lg uppercase shadow-md disabled:opacity-50">Salva Risultato</button>
                         )}
                       </div>
                     )
@@ -1013,14 +1040,13 @@ export default function Home() {
                 </div>
               </div>
             )}
-
-            {/* 🏆 CHIUSURA EVENTO E ASSEGNAZIONE ELO */}
+            
             {dashboardEvento.stato === 'In Corso' && dashboardEvento.creatore_id === mioGiocatoreId && (
-               <button onClick={chiudiEvento} disabled={inviando} className="w-full mt-6 bg-gradient-to-r from-yellow-400 to-yellow-500 text-blue-900 py-4 rounded-2xl text-sm font-black uppercase shadow-xl hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+               <button onClick={chiudiEvento} disabled={inviando} className="w-full mt-4 bg-gradient-to-r from-yellow-400 to-yellow-500 text-blue-900 py-4 rounded-2xl text-sm font-black uppercase shadow-xl hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
                  🏆 Concludi Evento e Assegna Punti
                </button>
             )}
-            
+
             <div className="h-10"></div>
           </div>
         </div>
