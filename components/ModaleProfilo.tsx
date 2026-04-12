@@ -14,9 +14,6 @@ export default function ModaleProfilo({
   partite, giocatori
 }: any) {
 
-  // ==========================================
-  // FUNZIONI GRAFICHE E STATISTICHE SPOSTATE QUI
-  // ==========================================
   const getLivello = (punti: number) => {
     if(punti < 200) return { nome: 'Principiante', icona: '🌱', bg: 'bg-green-100', text: 'text-green-700' };
     if(punti < 500) return { nome: 'Bandeja di Bronzo', icona: '🥉', bg: 'bg-orange-100', text: 'text-orange-800' };

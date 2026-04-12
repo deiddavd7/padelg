@@ -47,7 +47,7 @@ export default function TabRanking({
             <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
               <div className={`w-10 h-10 shrink-0 flex items-center justify-center rounded-2xl font-black text-lg ${i===0?'bg-yellow-400 text-blue-900':i===1?'bg-gray-200 text-gray-500':'bg-blue-50 text-blue-300'}`}>{i+1}</div>
               
-              {/* 📸 ECCO LE FOTO REINSERITE! */}
+              {/* 📸 FOTO */}
               {g.foto ? (
                 <img src={g.foto} className="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border-4 border-gray-50 shadow-sm shrink-0"/>
               ) : (
@@ -57,7 +57,13 @@ export default function TabRanking({
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="font-black text-blue-900 uppercase leading-none truncate">{g.Nome}</span>
                 <span className={`text-[9px] font-bold uppercase mt-1 w-max px-2 py-0.5 rounded ${liv.class}`}>{liv.emoji} {liv.nome}</span>
-                <div className="w-full flex gap-3 text-[10px] font-bold mt-1"><span className="text-gray-400">Match: {g.partite||0}</span></div>
+                
+                {/* 📊 STATISTICHE REINSERITE! */}
+                <div className="w-full flex gap-3 text-[10px] font-bold mt-1">
+                  <span className="text-gray-400">Match: {g.partite||0}</span>
+                  <span className="text-green-500">V: {g.vinte||0}</span>
+                  <span className="text-red-400">S: {g.perse||0}</span>
+                </div>
               </div>
             </div>
             <div className="bg-blue-600 px-4 py-2 rounded-2xl shadow-md shrink-0"><span className="text-xl font-black text-white">{g.Punti}</span></div>
