@@ -28,6 +28,13 @@ export default function Home() {
   const [mioNome, setMioNome] = useState<string>('')
 
   // ==========================================
+  // 🔔 NUOVO: STATO NOTIFICHE IN-APP
+  // ==========================================
+  const [notifica, setNotifica] = useState<{titolo: string, testo: string, tipo: 'sos' | 'invito'} | null>(null)
+  const prevInvitiCount = useRef(0)
+  const prevMessaggiCount = useRef(0)
+
+  // ==========================================
   // 2. STATI RISULTATO MATCH
   // ==========================================
   const [mostraFormPartita, setMostraFormPartita] = useState(false)
@@ -101,7 +108,7 @@ export default function Home() {
   const [evFase, setEvFase] = useState('Semifinale')
 
   // ==========================================
-  // EFFECTS
+  // EFFECTS REALI
   // ==========================================
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -133,14 +140,7 @@ export default function Home() {
           data.daily.time.forEach((date: string, index: number) => {
             const code = data.daily.weathercode[index];
             let emoji = '🌤️'; 
-            if (code === 0) emoji = '☀️'; 
-            else if (code === 1 || code === 2) emoji = '⛅️'; 
-            else if (code === 3) emoji = '☁️'; 
-            else if (code >= 45 && code <= 48) emoji = '🌫️'; 
-            else if (code >= 51 && code <= 67) emoji = '🌧️'; 
-            else if (code >= 71 && code <= 77) emoji = '🌨️'; 
-            else if (code >= 80 && code <= 82) emoji = '🌧️'; 
-            else if (code >= 95) emoji = '⛈️'; 
+            if (code === 0) emoji = '☀️'; else if (code === 1 || code === 2) emoji = '⛅️'; else if (code === 3) emoji = '☁️'; else if (code >= 45 && code <= 48) emoji = '🌫️'; else if (code >= 51 && code <= 67) emoji = '🌧️'; else if (code >= 71 && code <= 77) emoji = '🌨️'; else if (code >= 80 && code <= 82) emoji = '🌧️'; else if (code >= 95) emoji = '⛈️'; 
             meteoMap[date] = emoji;
           });
         }
@@ -151,6 +151,36 @@ export default function Home() {
     };
     fetchMeteo();
   }, []);
+
+  const invitiPendenti = prenotazioni.filter(p=>(p.g2_id===mioGiocatoreId&&p.g2_stato==='In attesa')||(p.g3_id===mioGiocatoreId&&p.g3_stato==='In attesa')||(p.g4_id===mioGiocatoreId&&p.g4_stato==='In attesa'));
+
+  // 🔔 SENSORI NOTIFICHE (I NUOVI EFFETTI)
+  useEffect(() => {
+    if (notifica) {
+      const timer = setTimeout(() => setNotifica(null), 5000); // Scompare dopo 5 secondi
+      return () => clearTimeout(timer);
+    }
+  }, [notifica]);
+
+  useEffect(() => {
+    // Sensore Inviti
+    if (invitiPendenti.length > prevInvitiCount.current) {
+      setNotifica({ titolo: 'Nuova Convocazione! 🎾', testo: 'Sei stato invitato a una nuova partita. Controlla il calendario!', tipo: 'invito' });
+    }
+    prevInvitiCount.current = invitiPendenti.length;
+  }, [invitiPendenti.length]);
+
+  useEffect(() => {
+    // Sensore Messaggi SOS
+    if (messaggi.length > prevMessaggiCount.current) {
+      const ultimoMsg = messaggi[messaggi.length - 1];
+      if (ultimoMsg && ultimoMsg.testo.includes('🚨 SOS PADEL!') && ultimoMsg.mittente_id !== mioGiocatoreId) {
+        setNotifica({ titolo: 'SOS Padel! 🚨', testo: 'A qualcuno manca un giocatore! Apri la chat per rispondere.', tipo: 'sos' });
+      }
+    }
+    prevMessaggiCount.current = messaggi.length;
+  }, [messaggi, mioGiocatoreId]);
+
 
   // ==========================================
   // FETCH FUNZIONI
@@ -257,7 +287,6 @@ export default function Home() {
   const apriGestioneInviti = (p:any) => { setInvitoG2(p.g2_id||''); setInvitoG3(p.g3_id||''); setInvitoG4(p.g4_id||''); setGestioneInviti(p); }
   const salvaInviti = async () => { setInviando(true); const scelti=[invitoG2,invitoG3,invitoG4].filter(id=>id!==''); if(new Set(scelti).size!==scelti.length||scelti.includes(mioGiocatoreId!)){alert("Duplicati selezionati.");setInviando(false);return;} const {error}=await supabase.from('prenotazioni').update({g2_id:invitoG2||null,g2_stato:invitoG2?(gestioneInviti.g2_id===invitoG2?gestioneInviti.g2_stato:'In attesa'):null,g3_id:invitoG3||null,g3_stato:invitoG3?(gestioneInviti.g3_id===invitoG3?gestioneInviti.g3_stato:'In attesa'):null,g4_id:invitoG4||null,g4_stato:invitoG4?(gestioneInviti.g4_id===invitoG4?gestioneInviti.g4_stato:'In attesa'):null}).eq('id',gestioneInviti.id); if(!error){setGestioneInviti(null);prendiPrenotazioni();} setInviando(false); }
   const rispondiInvito = async (p:any, cS:string, r:'Accettato'|'Rifiutato', cI:string) => { setInviando(true); await supabase.from('prenotazioni').update(r==='Rifiutato'?{[cS]:null,[cI]:null}:{[cS]:r}).eq('id',p.id); prendiPrenotazioni(); setInviando(false); }
-  const invitiPendenti = prenotazioni.filter(p=>(p.g2_id===mioGiocatoreId&&p.g2_stato==='In attesa')||(p.g3_id===mioGiocatoreId&&p.g3_stato==='In attesa')||(p.g4_id===mioGiocatoreId&&p.g4_stato==='In attesa'));
 
   // ==========================================
   // EVENTI E AMERICANE
@@ -406,6 +435,19 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#005bb7] text-white p-4 sm:p-8 font-sans flex flex-col items-center overflow-x-hidden relative pb-36">
       
+      {/* 🔔 IL NOSTRO TOAST ANIMATO! */}
+      {notifica && (
+        <div className="fixed top-4 left-4 right-4 z-[999] animate-in slide-in-from-top-10 fade-in duration-500 flex justify-center pointer-events-none drop-shadow-2xl">
+          <div className={`shadow-2xl rounded-2xl p-4 flex items-center gap-4 border w-full max-w-sm ${notifica.tipo === 'sos' ? 'bg-red-600 text-white border-red-400' : 'bg-gradient-to-r from-yellow-400 to-yellow-500 text-blue-900 border-yellow-300'}`}>
+            <span className="text-4xl drop-shadow-md">{notifica.tipo === 'sos' ? '🚨' : '📬'}</span>
+            <div className="flex flex-col">
+              <span className="font-black uppercase text-sm tracking-widest">{notifica.titolo}</span>
+              <span className="font-bold text-xs leading-tight opacity-95 mt-1">{notifica.testo}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sfondo Grafico */}
       <div className="fixed inset-0 pointer-events-none z-0 flex justify-center items-center overflow-hidden opacity-20">
         <div className="relative w-[200vw] h-[150vh] sm:w-[120vw] sm:h-[120vh] border-[6px] border-white -rotate-12 scale-110"><div className="absolute top-1/2 left-0 w-full h-[6px] bg-white -translate-y-1/2"></div><div className="absolute top-[25%] left-0 w-full h-[6px] bg-white"></div><div className="absolute top-[75%] left-0 w-full h-[6px] bg-white"></div><div className="absolute top-[25%] left-1/2 w-[6px] h-[50%] bg-white -translate-x-1/2"></div></div>
