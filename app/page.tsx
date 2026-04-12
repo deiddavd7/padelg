@@ -283,7 +283,7 @@ export default function Home() {
       iscritti.forEach((i:string) => { history[i] = {}; iscritti.forEach((j:string) => history[i][j] = 0); });
 
       for (let t = 1; t <= turni; t++) {
-        playerStats.sort((a, b) => a.played - b.played || Math.random() - 0.5);
+        playerStats.sort((a: any, b: any) => a.played - b.played || Math.random() - 0.5);
         const numCampi = Math.floor(iscritti.length / 4);
         for (let c = 0; c < numCampi; c++) {
           let p = [playerStats[c*4].id, playerStats[c*4+1].id, playerStats[c*4+2].id, playerStats[c*4+3].id];
@@ -292,7 +292,7 @@ export default function Home() {
             { a: [p[0], p[2]], b: [p[1], p[3]], score: history[p[0]][p[2]] + history[p[1]][p[3]] },
             { a: [p[0], p[3]], b: [p[1], p[2]], score: history[p[0]][p[3]] + history[p[1]][p[2]] }
           ];
-          combos.sort((x,y) => x.score - y.score);
+          combos.sort((x: any, y: any) => x.score - y.score);
           let best = combos[0];
           history[best.a[0]][best.a[1]]++; history[best.a[1]][best.a[0]]++;
           history[best.b[0]][best.b[1]]++; history[best.b[1]][best.b[0]]++;
@@ -307,7 +307,7 @@ export default function Home() {
       const n = iscritti.length;
       if (![4, 8, 16].includes(n)) return alert("Il Torneo richiede esattamente 4, 8 o 16 giocatori (multipli per formare le coppie)!");
       
-      let seeded = [...iscritti].sort((a,b) => {
+      let seeded = [...iscritti].sort((a: any, b: any) => {
          const pA = giocatori.find(g=>g.id.toString()===a)?.Punti || 0;
          const pB = giocatori.find(g=>g.id.toString()===b)?.Punti || 0;
          return pB - pA;
